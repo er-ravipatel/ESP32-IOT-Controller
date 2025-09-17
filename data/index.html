@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0a84ff">
+    <title>ESP32 LED</title>
+    <style>
+      :root {
+        --bulbcolor:#2342d7;
+        --bulbshadow:0 0 0 3px rgba(0, 0, 0, .15) inset, 0 0 24px rgb(148 162 229 / 90%), 0 0 60px rgba(255, 213, 74, .4)
+        --bg: #0d1117;        /* dark base */
+        --panel: #161b22;     /* card background */
+        --text: #c9d1d9;      /* primary text */
+        --muted: #8b949e;     /* secondary text */
+        --on: #4936b6;   /* action color */
+        --off: var(--muted);   /* off color */
+        --danger: #f85149;    /* error color */
+        --shadow: 0 10px 30px rgba(0,0,0,.25);
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg:#f6f8fa; --panel:#ffffff; --text:#24292f; --muted:#57606a; --shadow: 0 8px 24px rgba(140,149,159,.2);
+        }
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        background: linear-gradient(180deg, var(--bg), rgba(0,0,0,.08));
+        color: var(--text);
+        font: 16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, sans-serif;
+        display: grid; place-items: center;
+      }
+      .container { width: min(560px, 94vw); background: var(--panel); border-radius: 16px; padding: 24px; box-shadow: var(--shadow); }
+      .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+      .title { display: flex; align-items: center; gap: .6rem; font-size: 1.25rem; font-weight: 700; }
+      .bulb { width: 16px; height: 16px; border-radius: 50%; background: #444; box-shadow: 0 0 0 3px rgba(0,0,0,.15) inset, 0 0 24px rgba(255,220,100,0); transition: .25s all; }
+      .bulb.on { background: var(--bulbcolor); box-shadow: var(--bulbshadow); }
+      .row { margin: 12px 0 8px; }
+      .status { font-weight: 700; }
+      .switch { position: relative; width: 64px; height: 36px; background: #737c89; border-radius: 999px; cursor: pointer; transition: .2s background; }
+      .switch input { position: absolute; width: 100%; height: 100%; opacity: 0; margin: 0; cursor: pointer; }
+      .knob { position: absolute; top: 3px; left: 3px; width: 30px; height: 30px; background: #fff; border-radius: 50%; box-shadow: 0 4px 12px rgba(0,0,0,.25); transition: transform .2s ease, background .2s ease; }
+      .switch input:checked + .knob { transform: translateX(28px); }
+      .switch.on { background: var(--on); }
+      .actions { display: flex; gap: .5rem; margin-top: 8px; }
+      .btn { padding: .6rem .9rem; border-radius: .55rem; border: 1px solid transparent; text-decoration: none; color: #fff; background: var(--on); box-shadow: 0 4px 10px rgba(10,132,255,.25); transition: opacity .2s ease; }
+      .btn.secondary { background: var(--off) }
+      .btn.disabled { opacity: .2; pointer-events: none; border: #22c55e; }
+      .line { height: 1px; background: linear-gradient(90deg, transparent, #0002, transparent); margin: 16px 0; }
+      .small { color: var(--muted); font-size: .9rem; }
+      .dot { width: 8px; height: 8px; border-radius: 50%; background: #9aa0a6; display: inline-block; margin-right: .4rem; vertical-align: middle; }
+      .dot.ok { background: #22c55e; }
+      .dot.off { background: #ef4444; }
+      .alert { color: var(--danger); display: none; }
+      .alert.show { display: block; }
+    </style>
+  </head>
+  <body>
+    <main class="container">
+      <div class="header">
+        <div class="title"><div id="bulb" class="bulb"></div> ESP32 LED</div>
+        <div class="small"><span id="connDot" class="dot"></span><span id="connText">Connecting…</span></div>
+      </div>
+      <div class="row"><span class="status">Status: <span id="statusText">…</span></span></div>
+      <div class="row" style="display:flex; align-items:center; gap:12px;">
+        <label class="switch" id="switch"><input id="toggle" type="checkbox"><span class="knob"></span></label>
+        <div class="small">Use the switch to turn the LED on or off.</div>
+      </div>
+      <div class="line"></div>
+      <div class="actions">
+        <a href="#" id="btnOn"  class="btn">Turn On</a>
+        <a href="#" id="btnOff" class="btn secondary">Turn Off</a>
+      </div>
+      <p id="info" class="small" aria-live="polite"></p>
+      <p id="error" class="alert small">Connection lost. The ESP32 is not responding.</p>
+      <p class="small">This page uses <code>/state</code>, <code>/on</code>, and <code>/off</code> endpoints served by the ESP32.</p>
+    </main>
+    <script>
+      let state = { on: false };
+      const statusText = document.getElementById('statusText');
+      const bulb = document.getElementById('bulb');
+      const toggle = document.getElementById('toggle');
+      const sw = document.getElementById('switch');
+      const errorEl = document.getElementById('error');
+      const infoEl = document.getElementById('info');
+      const btnOn = document.getElementById('btnOn');
+      const btnOff = document.getElementById('btnOff');
+      const connDot = document.getElementById('connDot');
+      const connText = document.getElementById('connText');
+
+      function updateButtons(){
+        // Disable the button that matches current state after action completes
+        btnOn.classList.toggle('disabled', state.on === true);
+        btnOff.classList.toggle('disabled', state.on === false);
+      }
+
+      function render() {
+        statusText.textContent = state.on ? 'ON' : 'OFF';
+        bulb.classList.toggle('on', state.on);
+        toggle.checked = state.on;
+        sw.classList.toggle('on', state.on);
+        infoEl.textContent = state.on ? 'LED is ON' : 'LED is OFF';
+        updateButtons();
+      }
+
+      function renderPending(pending) {
+        toggle.disabled = pending;
+        if (pending) {
+          // Lock both buttons while the request is in flight
+          btnOn.classList.add('disabled');
+          btnOff.classList.add('disabled');
+        } else {
+          // Re-enable and then apply state-based disabling
+          btnOn.classList.remove('disabled');
+          btnOff.classList.remove('disabled');
+          updateButtons();
+        }
+      }
+
+      async function api(path) {
+        try {
+          const res = await fetch(path, { cache: 'no-store' });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          errorEl.classList.remove('show');
+          connDot.classList.add('ok');
+          connDot.classList.remove('off');
+          connText.textContent = 'Connected';
+          if (path === '/state') return res.json();
+          return null;
+        } catch (e) {
+          errorEl.classList.add('show');
+          connDot.classList.remove('ok');
+          connDot.classList.add('off');
+          connText.textContent = 'Offline';
+          throw e;
+        }
+      }
+
+      async function refresh() {
+        const j = await api('/state');
+        if (j && typeof j.on === 'boolean') {
+          state.on = j.on;
+          render();
+        }
+      }
+
+      async function set(on) {
+        if (on === state.on) return;
+        const prev = state.on;
+        renderPending(true);
+        state.on = on;   // optimistically update UI
+        render();
+        infoEl.textContent = on ? 'Turning ON…' : 'Turning OFF…';
+        try {
+          await api(on ? '/on' : '/off');
+          infoEl.textContent = on ? 'LED is ON' : 'LED is OFF';
+        } catch (e) {
+          // Revert UI on failure
+          state.on = prev;
+          render();
+          infoEl.textContent = 'Action failed';
+        } finally {
+          renderPending(false);
+        }
+      }
+
+      toggle.addEventListener('change', () => set(toggle.checked));
+      document.getElementById('btnOn').addEventListener('click', (e) => { e.preventDefault(); set(true); });
+      document.getElementById('btnOff').addEventListener('click', (e) => { e.preventDefault(); set(false); });
+
+      refresh().catch(() => {});
+      setInterval(() => refresh().catch(() => {}), 4000);
+    </script>
+  </body>
+  </html>
