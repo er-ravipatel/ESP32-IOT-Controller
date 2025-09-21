@@ -181,6 +181,14 @@
 
     <!-- Script -->
     <script>
+      /*
+       * Local LED controller (client side)
+       * ----------------------------------
+       * - Poll /state to keep the UI in sync with the device LED
+       * - Call /on and /off to change the LED, then refresh state
+       * - Use short request timeouts and avoid overlapping polls so
+       *   the UI stays responsive on slow links
+       */
       // DOM references
       const bulb       = document.getElementById('bulb');
       const statusEl   = document.getElementById('statusText');

@@ -69,6 +69,18 @@
     </main>
 
     <script>
+      /*
+       * Setup workflow (client side)
+       * ----------------------------
+       * - Scan nearby networks (GET /scan), populate quick‑select list
+       * - Submit Wi‑Fi credentials to the device (POST /save)
+       * - Poll /status until the device reports a valid STA IP
+       * - Redirect the browser to http://<sta-ip>/localcontroller.html
+       *
+       * Notes:
+       * - This script avoids overlapping requests and shows friendly
+       *   status messages as the device progresses through connect.
+       */
       const nets = document.getElementById('nets');
       const msg  = document.getElementById('msg');
       const dot  = document.getElementById('dot');

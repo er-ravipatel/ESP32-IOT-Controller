@@ -1,3 +1,13 @@
+// Setup portal (SoftAP + captive DNS) and minimal web API
+// --------------------------------------------------------
+// Responsibilities
+// - Start/stop SoftAP + captive DNS for onboarding
+// - Serve static files from LittleFS (setup.html, localcontroller.html)
+// - Provide tiny JSON endpoints: /status, /state, /on, /off
+// - Keep HTTP server running on STA even after AP stops
+//
+// This module avoids heavy/blocking work in request handlers to keep
+// the page responsive while polling.
 #include "portal.h"
 
 #include <Arduino.h>
