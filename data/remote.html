@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ESP32 • MQTT Remote</title>
+    <style>
+      body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:2rem;line-height:1.5}
+      .card{max-width:760px;margin:0 auto;border:1px solid #e5e7eb;border-radius:12px;padding:16px}
+      code{background:#f3f4f6;border:1px solid #e5e7eb;border-radius:6px;padding:.15rem .35rem}
+      .muted{color:#6b7280}
+      .row{display:flex;gap:12px;align-items:center;margin:.5rem 0}
+      .copy{padding:.25rem .5rem;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer}
+      .ok{color:#16a34a}.warn{color:#d97706}.err{color:#dc2626}
+      .actions{display:flex;gap:.5rem;margin:.5rem 0}
+      .btn{padding:.5rem .8rem;border:1px solid #d1d5db;border-radius:8px;cursor:pointer;background:#0a84ff;color:#fff}
+      .btn.secondary{background:#6b7280}
+      .btn:disabled{opacity:.6;cursor:default}
+      .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <h2>ESP32 MQTT Remote</h2>
+      <p class="muted">Control the LED via MQTT over secure WebSockets (WSS). This page connects to your broker directly from the browser.</p>
+
+      <h3>Connection</h3>
+      <div class="row">Broker: <code id="hostInfo"></code></div>
+      <div class="row">Status: <span id="conn" class="muted">Connecting…</span></div>
+
+      <h3>Topics</h3>
+      <div class="row">Command (publish here): <code id="tcmd">esp32/led/cmd</code> <button class="copy" data-copy="tcmd">Copy</button></div>
+      <div class="row">State (subscribe): <code id="tstate">esp32/led/state</code> <button class="copy" data-copy="tstate">Copy</button></div>
+
+      <h3>Commands</h3>
+      <ul>
+        <li>Publish <code>ON</code> or <code>1</code> to the command topic → LED turns on</li>
+        <li>Publish <code>OFF</code> or <code>0</code> to the command topic → LED turns off</li>
+        <li>Publish <code>TOGGLE</code> or <code>T</code> to the command topic → LED toggles</li>
+      </ul>
+
+      <h3>Examples</h3>
+      <pre class="muted">mosquitto_pub -h &lt;host&gt; -p &lt;port&gt; -t esp32/led/cmd -m ON
+mosquitto_pub -h &lt;host&gt; -p &lt;port&gt; -t esp32/led/cmd -m OFF
+mosquitto_sub -h &lt;host&gt; -p &lt;port&gt; -t esp32/led/state</pre>
+
+      <h3>Live Status</h3>
+      <p>Device: <span id="devStatus" class="muted">Checking…</span></p>
+      <p>LED State: <span id="led" class="muted">...</span></p>
+      <div class="actions">
+        <button id="btnOn" class="btn">Turn ON</button>
+        <button id="btnOff" class="btn secondary">Turn OFF</button>
+        <button id="btnToggle" class="btn">Toggle</button>
+      </div>
+      <p id="info" class="muted"></p>
+      <p class="muted">If MQTT is disconnected, these buttons will fall back to HTTP (/on, /off, /toggle).</p>
+    </main>
+
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <script>
+      /*
+       * This page is informational and helps you control the ESP32 LED via MQTT.
+       * Values below reflect the firmware defaults. Update mqtt_config.cpp to change.
+       */
+      // Hardcoded broker config (edit these values)
+      const CFG = {
+        host: 'y2d012bd.ala.eu-central-1.emqxsl.com', // broker hostname
+        port: 8084,                                    // WSS port
+        path: '/mqtt',                                 // WSS path
+        username: 'ESP32-LOCK-VIK',                         // set if required
+        password: 'lkj082A%SD524',                     // set if required
+        clientId: 'web-' + Math.random().toString(16).slice(2, 8),
+        topicCmd: 'esp32/led/cmd',
+        topicState: 'esp32/led/state',
+      };
+      const connEl = document.getElementById('conn');
+      const hostInfo = document.getElementById('hostInfo');
+      hostInfo.textContent = `${CFG.host}:${CFG.port}${CFG.path}`;
+
+      // Copy buttons
+      document.querySelectorAll('.copy').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-copy');
+          const text = document.getElementById(id).textContent;
+          navigator.clipboard.writeText(text);
+          btn.textContent = 'Copied'; setTimeout(()=> btn.textContent='Copy', 900);
+        });
+      });
+
+      // Control + live state via MQTT (with HTTP fallback)
+      const ledEl = document.getElementById('led');
+      const devStatusEl = document.getElementById('devStatus');
+      const infoEl = document.getElementById('info');
+      const btnOn = document.getElementById('btnOn');
+      const btnOff = document.getElementById('btnOff');
+      const btnToggle = document.getElementById('btnToggle');
+
+      let client = null;
+      let mqttConnected = false;
+      let lastStateTs = 0; // ms since epoch of last MQTT state message
+
+      async function call(path, timeoutMs=2500){
+        const ctrl = new AbortController();
+        const t = setTimeout(()=>ctrl.abort(), timeoutMs);
+        try{
+          const r = await fetch(path, {cache:'no-store', signal: ctrl.signal});
+          if(!r.ok) throw 0; const ct = r.headers.get('content-type')||'';
+          return ct.includes('application/json') ? r.json() : null;
+        } finally { clearTimeout(t); }
+      }
+      async function refresh(){
+        try{
+          if (!mqttConnected) {
+            // Only use HTTP when MQTT is not connected
+            const j = await call('/state');
+            ledEl.textContent = (j && j.on) ? 'ON' : 'OFF';
+            ledEl.className = j && j.on ? 'ok' : 'warn';
+            devStatusEl.textContent = 'Online (HTTP)';
+            devStatusEl.className = 'ok';
+          } else {
+            // MQTT connected: rely on recent state messages
+            const age = Date.now() - lastStateTs;
+            if (lastStateTs && age < 45000) { // seen within 45s
+              devStatusEl.textContent = 'Online (MQTT)';
+              devStatusEl.className = 'ok';
+            } else {
+              devStatusEl.textContent = 'Connected to broker, no recent state';
+              devStatusEl.className = 'warn';
+            }
+          }
+        }catch(_){
+          // HTTP failed and/or not using MQTT
+          if (!mqttConnected) {
+            ledEl.textContent = 'unknown';
+            ledEl.className = 'err';
+            devStatusEl.textContent = 'Offline';
+            devStatusEl.className = 'err';
+          }
+        }
+        setTimeout(refresh, 4000);
+      }
+      refresh();
+
+      async function doAction(path){
+        infoEl.textContent = 'Working...';
+        btnOn.disabled = btnOff.disabled = btnToggle.disabled = true;
+        try{
+          if (mqttConnected && client) {
+            let payload = 'ON';
+            if (path === '/off') payload = 'OFF';
+            if (path === '/toggle') payload = 'TOGGLE';
+            client.publish(CFG.topicCmd, payload);
+          } else {
+            await call(path);
+          }
+          await refresh(); infoEl.textContent = '';
+        }catch(_){ infoEl.textContent = 'Action failed'; }
+        btnOn.disabled = btnOff.disabled = btnToggle.disabled = false;
+      }
+      btnOn.addEventListener('click', ()=> doAction('/on'));
+      btnOff.addEventListener('click', ()=> doAction('/off'));
+      btnToggle.addEventListener('click', ()=> doAction('/toggle'));
+
+      // Auto-connect to MQTT over WSS using hardcoded config
+      (function connectMqtt(){
+        const url = `wss://${CFG.host}:${CFG.port}${CFG.path}`;
+        const options = {
+          clientId: CFG.clientId,
+          username: CFG.username || undefined,
+          password: CFG.password || undefined,
+          reconnectPeriod: 2000,
+          clean: true,
+          connectTimeout: 5000,
+        };
+        infoEl.textContent = `Connecting to ${url} ...`;
+        connEl.textContent = 'Connecting...';
+        client = mqtt.connect(url, options);
+        client.on('connect', ()=>{
+          mqttConnected = true;
+          infoEl.textContent = '';
+          connEl.textContent = 'Connected';
+          client.subscribe(CFG.topicState);
+          // We expect a retained state message soon; mark now
+          lastStateTs = 0; // will update on message
+        });
+        client.on('reconnect', ()=>{ connEl.textContent = 'Reconnecting...'; });
+        client.on('close', ()=>{ mqttConnected = false; connEl.textContent = 'Disconnected'; });
+        client.on('error', (err)=>{ mqttConnected = false; connEl.textContent = 'Error'; console.error(err); });
+        client.on('message', (topic, payload)=>{
+          if (topic === CFG.topicState) {
+            try{
+              const j = JSON.parse(String(payload));
+              ledEl.textContent = j.on ? 'ON' : 'OFF';
+              ledEl.className = j.on ? 'ok' : 'warn';
+              lastStateTs = Date.now();
+              devStatusEl.textContent = 'Online (MQTT)';
+              devStatusEl.className = 'ok';
+            }catch(_){ }
+          }
+        });
+      })();
+    </script>
+  </body>
+  </html>

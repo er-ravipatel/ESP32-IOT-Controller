@@ -140,6 +140,7 @@ namespace Portal {
         handleRoot();
       }
     });
+
     server.on("/wifi", handleRoot);
     server.on("/setup", [] { handleRoot(); });
     server.on("/setup.html", [] { handleRoot(); });
@@ -177,6 +178,13 @@ namespace Portal {
     });
     server.on("/on", HTTP_GET, []{ writeLed(true); server.send(200, "application/json", "{\"on\":true}"); });
     server.on("/off", HTTP_GET, []{ writeLed(false); server.send(200, "application/json", "{\"on\":false}"); });
+    server.on("/toggle", HTTP_GET, []{
+      int level = digitalRead(LED_BUILTIN);
+      bool on = LED_ACTIVE_HIGH ? (level == HIGH) : (level == LOW);
+      bool next = !on;
+      writeLed(next);
+      server.send(200, "application/json", String("{\"on\":") + (next?"true":"false") + "}");
+    });
     server.onNotFound([]{
       String path = server.uri();
       if (!serveFile(path)) handleRoot();

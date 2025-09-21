@@ -15,6 +15,7 @@
 #include <WiFi.h>
 #include "wifi_config.h"
 #include "portal.h"
+#include "mqtt_min.h"
 
 #ifndef LED_BUILTIN
 #define LED_BUILTIN 2  // Fallback for common ESP32 dev boards
@@ -71,6 +72,8 @@ void setup() {
   // Brings up the SoftAP + captive DNS; users can join the AP and
   // visit /setup.html to scan and save Wi‑Fi credentials.
   Portal::begin(nullptr, nullptr);
+  // Init minimal MQTT (non-blocking)
+  MqttMin::begin();
 
   // Try saved credentials; if none or connect fails, keep the portal up
   String ssid, pass;
@@ -132,6 +135,9 @@ void loop() {
       lastToggle = now;
     }
   }
+
+  // MQTT worker (non-blocking, attempts only after Wi‑Fi is up)
+  MqttMin::loop();
 
   // Small idle delay to keep the loop yielding
   delay(10);
