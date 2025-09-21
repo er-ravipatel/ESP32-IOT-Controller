@@ -1,0 +1,59 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ESP32 Wi‑Fi Setup</title>
+    <style>
+      body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:2rem}
+      label{display:block;margin:.6rem 0 .2rem}
+      input,select,button{font:inherit;padding:.6rem;border:1px solid #ccc;border-radius:8px}
+      button{background:#0a84ff;color:#fff;border:0;padding:.6rem 1rem;margin-top:1rem;border-radius:8px}
+      .row{margin:.5rem 0}
+      .net{display:flex;gap:.5rem;align-items:center;margin:.25rem 0}
+      .muted{color:#777}
+    </style>
+  </head>
+  <body>
+    <h2>ESP32 Wi‑Fi Setup</h2>
+    <div class="row muted">Choose a network or type your own SSID.</div>
+    <div class="row"><button id="scan">Scan Networks</button></div>
+    <div id="nets" class="row"></div>
+    <form id="form">
+      <label>SSID</label>
+      <input id="ssid" name="ssid" required>
+      <label>Password</label>
+      <input id="pass" name="pass" type="password" placeholder="(leave blank for open)">
+      <div class="row"><button type="submit">Save & Connect</button></div>
+    </form>
+    <p id="msg" class="muted"></p>
+    <script>
+      async function doScan(){
+        msg.textContent = 'Scanning…';
+        try{
+          const r = await fetch('/scan',{cache:'no-store'}); if(!r.ok) throw 0; const j = await r.json();
+          nets.innerHTML = '';
+          j.sort((a,b)=>b.rssi-a.rssi).slice(0,10).forEach(n=>{
+            const d=document.createElement('div'); d.className='net';
+            const b=document.createElement('button'); b.type='button'; b.textContent=n.ssid||'(hidden)';
+            b.onclick=()=>{ ssid.value=n.ssid; pass.focus(); };
+            const s=document.createElement('span'); s.className='muted'; s.textContent = n.rssi+' dBm';
+            d.appendChild(b); d.appendChild(s); nets.appendChild(d);
+          });
+          msg.textContent = 'Tap a network to fill SSID.';
+        }catch(e){ msg.textContent='Scan failed.'; }
+      }
+      scan.onclick=doScan; doScan();
+      form.onsubmit = async (e)=>{
+        e.preventDefault(); msg.textContent='Saving…';
+        const body = new URLSearchParams({ssid:ssid.value, pass:pass.value});
+        try{
+          const r = await fetch('/save',{method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body});
+          if(!r.ok) throw 0; const j = await r.json();
+          msg.textContent = j.ok? 'Saved. ESP32 will try to connect. Join your Wi‑Fi and check Serial for IP.' : 'Save failed';
+        }catch(e){ msg.textContent='Save failed.'; }
+      };
+    </script>
+  </body>
+  </html>
+

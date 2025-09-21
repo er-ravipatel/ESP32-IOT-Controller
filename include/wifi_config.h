@@ -1,9 +1,14 @@
-// Wi‑Fi credentials (kept separate from main logic)
+// Wi‑Fi configuration helpers (persist credentials in NVS)
 #pragma once
+#include <Arduino.h>
 
-// Define your Wi‑Fi SSID and password in the accompanying implementation file.
-// Edit values in: src/wifi_config.cpp
+namespace WifiConfig {
+  // Load saved credentials from NVS (returns true if present)
+  bool load(String& ssid, String& pass);
 
-extern const char* const WIFI_SSID;
-extern const char* const WIFI_PASS;
+  // Save credentials to NVS (overwrites existing)
+  bool save(const String& ssid, const String& pass);
 
+  // Remove saved credentials
+  void clear();
+}
