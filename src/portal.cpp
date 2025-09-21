@@ -5,10 +5,12 @@
 #include <WebServer.h>
 #include <LittleFS.h>
 #include <FS.h>
+#include <DNSServer.h>
 #include "wifi_config.h"
 
 namespace {
   WebServer server(80);
+  DNSServer dns;
   bool g_running = false;
   bool g_newCreds = false;
 
@@ -40,19 +42,19 @@ namespace {
   }
 
   void handleRoot() {
-    if (!serveFile("/wifi.html")) {
-      // Fallback inline page
-      server.send(200, "text/html",
-        "<!doctype html><html><meta name=viewport content='width=device-width,initial-scale=1'>"
-        "<title>ESP32 WiFi Setup</title><body style='font-family:sans-serif;margin:2rem'>"
-        "<h2>ESP32 Wi‑Fi Setup</h2>"
-        "<form method='POST' action='/save'>"
-        "<label>SSID<br><input name='ssid' required></label><br><br>"
-        "<label>Password<br><input type='password' name='pass'></label><br><br>"
-        "<button type='submit'>Save & Connect</button>"
-        "</form>"
-        "</body></html>");
-    }
+    if (serveFile("/setup.html")) return;
+    if (serveFile("/wifi.html")) return;
+    // Fallback inline page
+    server.send(200, "text/html",
+      "<!doctype html><html><meta name=viewport content='width=device-width,initial-scale=1'>"
+      "<title>ESP32 WiFi Setup - Fallback</title><body style='font-family:sans-serif;margin:2rem'>"
+      "<h2>ESP32 Wi - Fi Setup - Fallback</h2>"
+      "<form method='POST' action='/save'>"
+      "<label>SSID<br><input name='ssid' required></label><br><br>"
+      "<label>Password<br><input type='password' name='pass'></label><br><br>"
+      "<button type='submit'>Save & Connect</button>"
+      "</form>"
+      "</body></html>");
   }
 
   void handleScan() {
@@ -80,8 +82,13 @@ namespace {
 
 namespace Portal {
   void begin(const char* apSsid, const char* apPass) {
-    if (!LittleFS.begin(true)) {
-      // Continue anyway; inline page will be used
+    // Mount LittleFS explicitly on label "littlefs"; fallback to "spiffs" for compatibility
+    bool mounted = LittleFS.begin(true, "/littlefs", 5, "littlefs");
+    if (!mounted) {
+      mounted = LittleFS.begin(true, "/littlefs", 5, "spiffs");
+    }
+    if (!mounted) {
+      Serial.println("LittleFS mount failed (portal will use inline page)");
     }
     WiFi.mode(WIFI_AP_STA); // allow scanning while AP is up
     String ssid = apSsid ? String(apSsid) : apName();
@@ -89,9 +96,28 @@ namespace Portal {
     WiFi.softAP(ssid.c_str(), pass);
     delay(100);
     Serial.print("Config portal AP IP: "); Serial.println(WiFi.softAPIP());
+    // Captive DNS: answer all domains to our AP IP
+    dns.start(53, "*", WiFi.softAPIP());
 
-    server.on("/", handleRoot);
+    // Root -> redirect to setup.html if present, else handleRoot fallback
+    server.on("/", [] {
+      if (LittleFS.exists("/setup.html")) {
+        server.sendHeader("Location", "/setup.html", true);
+        server.send(302, "text/plain", "");
+      } else {
+        handleRoot();
+      }
+    });
     server.on("/wifi", handleRoot);
+    server.on("/setup", [] { handleRoot(); });
+    server.on("/setup.html", [] { handleRoot(); });
+    // Common captive endpoints for OS captive portal detection
+    server.on("/generate_204", [] { handleRoot(); });
+    server.on("/gen_204", [] { handleRoot(); });
+    server.on("/hotspot-detect.html", [] { handleRoot(); });
+    server.on("/library/test/success.html", [] { handleRoot(); });
+    server.on("/ncsi.txt", [] { handleRoot(); });
+    server.on("/fwlink", [] { handleRoot(); });
     server.on("/scan", handleScan);
     server.on("/save", HTTP_POST, handleSave);
     server.onNotFound(handleRoot);
@@ -100,12 +126,13 @@ namespace Portal {
   }
 
   void loop() {
-    if (g_running) server.handleClient();
+    if (g_running) { dns.processNextRequest(); server.handleClient(); }
   }
 
   void stop() {
     if (!g_running) return;
     server.stop();
+    dns.stop();
     WiFi.softAPdisconnect(true);
     g_running = false;
   }
@@ -113,4 +140,3 @@ namespace Portal {
   bool running() { return g_running; }
   bool hasNewCredentials() { bool v = g_newCreds; g_newCreds = false; return v; }
 }
-

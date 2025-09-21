@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0a84ff">
+    <title>ESP32 • Setup</title>
+    <style>
+      :root{
+        --bg:#0d1117; --panel:#161b22; --text:#c9d1d9; --muted:#8b949e; --primary:#0a84ff; --accent:#22c55e; --warn:#f59e0b; --error:#ef4444; --shadow:0 14px 40px rgba(0,0,0,.28)
+      }
+      @media (prefers-color-scheme: light){:root{--bg:#f6f8fa;--panel:#fff;--text:#24292f;--muted:#57606a;--shadow:0 12px 30px rgba(140,149,159,.25)}}
+      *{box-sizing:border-box}
+      html,body{height:100%}
+      body{margin:0;background:linear-gradient(180deg,var(--bg),rgba(0,0,0,.08));color:var(--text);font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,Arial,sans-serif;display:grid;place-items:center}
+      .card{width:min(640px,94vw);background:var(--panel);border-radius:18px;box-shadow:var(--shadow);padding:24px}
+      .row{display:flex;gap:12px;align-items:center}
+      h1{margin:0 0 6px 0;font-size:22px}
+      p.small{color:var(--muted);margin:6px 0 16px}
+      .btn{display:inline-flex;align-items:center;gap:.5rem;background:var(--primary);color:#fff;border:0;border-radius:10px;padding:.6rem .9rem;cursor:pointer;box-shadow:0 6px 16px rgba(10,132,255,.25)}
+      .btn.secondary{background:#6b7280}
+      .btn:disabled{opacity:.6;cursor:default}
+      label{display:block;margin:.4rem 0 .25rem}
+      input{width:100%;padding:.7rem;border:1px solid #2a2f36;border-radius:10px;background:#0f141a;color:var(--text)}
+      @media (prefers-color-scheme: light){input{background:#fff;border-color:#d0d7de}}
+      .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+      .net{display:flex;justify-content:space-between;align-items:center;padding:.55rem .75rem;border:1px solid #2a2f36;border-radius:10px;cursor:pointer}
+      @media (prefers-color-scheme: light){.net{border-color:#e5e7eb}}
+      .net .rssi{color:var(--muted);font-size:.9rem}
+      .section{margin:16px 0}
+      .status{display:flex;align-items:center;gap:.5rem;color:var(--muted);font-size:.95rem}
+      .dot{width:8px;height:8px;border-radius:50%;background:#9aa0a6}
+      .dot.ok{background:var(--accent)}
+      .dot.warn{background:var(--warn)}
+      .dot.err{background:var(--error)}
+      .help{font-size:.85rem;color:var(--muted)}
+      code{background:#0f141a;border:1px solid #2a2f36;padding:.15rem .35rem;border-radius:6px}
+      @media (prefers-color-scheme: light){code{background:#f3f4f6;border-color:#e5e7eb}}
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <h1>ESP32 Setup</h1>
+      <p class="small">Connect the ESP32 to your Wi‑Fi network. After saving, the device will attempt to join your Wi‑Fi and the LED will turn solid when connected.</p>
+
+      <div class="section">
+        <div class="row" style="justify-content:space-between">
+          <strong>Nearby Networks</strong>
+          <button id="scan" class="btn" type="button">Scan</button>
+        </div>
+        <div id="nets" class="grid" style="margin-top:10px"></div>
+      </div>
+
+      <form id="form" class="section">
+        <label for="ssid">Wi‑Fi Name (SSID)</label>
+        <input id="ssid" name="ssid" placeholder="e.g. MyHome2G" required>
+
+        <label for="pass">Password</label>
+        <input id="pass" name="pass" type="password" placeholder="(blank for open network)">
+
+        <div class="row" style="margin-top:12px;justify-content:flex-end">
+          <button id="save" class="btn" type="submit">Save &amp; Connect</button>
+          <button id="saving" class="btn secondary" type="button" disabled style="display:none">Saving…</button>
+        </div>
+      </form>
+
+      <div class="status"><span id="dot" class="dot"></span><span id="msg">Ready</span></div>
+      <p class="help">Tip: If the page does not appear automatically, browse to <code>http://192.168.4.1</code> after joining the ESP32 hotspot.</p>
+    </main>
+
+    <script>
+      const nets = document.getElementById('nets');
+      const msg  = document.getElementById('msg');
+      const dot  = document.getElementById('dot');
+      const form = document.getElementById('form');
+      const ssid = document.getElementById('ssid');
+      const pass = document.getElementById('pass');
+      const scanBtn = document.getElementById('scan');
+      const saveBtn = document.getElementById('save');
+      const savingBtn = document.getElementById('saving');
+
+      function setStatus(text, cls){
+        msg.textContent = text;
+        dot.classList.remove('ok','warn','err');
+        if(cls) dot.classList.add(cls);
+      }
+
+      async function scan(){
+        setStatus('Scanning…','warn');
+        scanBtn.disabled = true;
+        try{
+          const r = await fetch('/scan', {cache:'no-store'});
+          if(!r.ok) throw 0; const list = await r.json();
+          nets.innerHTML = '';
+          list.sort((a,b)=>b.rssi-a.rssi).slice(0,12).forEach(n=>{
+            const d=document.createElement('button');
+            d.type='button'; d.className='net';
+            d.innerHTML = `<span>${n.ssid||'(hidden)'}</span><span class="rssi">${n.rssi} dBm</span>`;
+            d.onclick = ()=>{ ssid.value = n.ssid; pass.focus(); };
+            nets.appendChild(d);
+          });
+          setStatus('Select a network or enter SSID.','ok');
+        }catch(e){ setStatus('Scan failed. Try again.','err'); }
+        scanBtn.disabled = false;
+      }
+
+      form.addEventListener('submit', async (e)=>{
+        e.preventDefault();
+        if(!ssid.value) return;
+        scanBtn.disabled = true; saveBtn.style.display='none'; savingBtn.style.display='inline-flex';
+        setStatus('Saving credentials…','warn');
+        try{
+          const body = new URLSearchParams({ssid:ssid.value, pass:pass.value});
+          const r = await fetch('/save', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body});
+          if(!r.ok) throw 0; const j = await r.json();
+          if(j && j.ok){
+            setStatus('Saved. Device will try to connect now. Join your Wi‑Fi and check the device LED.','ok');
+          } else {
+            setStatus('Save failed.','err');
+          }
+        }catch(e){ setStatus('Save failed.','err'); }
+        savingBtn.style.display='none'; saveBtn.style.display='inline-flex'; scanBtn.disabled = false;
+      });
+
+      scan();
+    </script>
+  </body>
+  </html>
+

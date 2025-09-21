@@ -17,7 +17,9 @@ static inline void writeLed(bool on) {
 
 // Connect with timeout and simple logs
 static bool connectWiFi(const String& ssid, const String& pass, uint32_t timeoutMs = 20000) {
-  WiFi.mode(WIFI_STA);
+  // Keep AP running if already active (AP or AP+STA)
+  wifi_mode_t m = WiFi.getMode();
+  if (m == WIFI_AP || m == WIFI_AP_STA) WiFi.mode(WIFI_AP_STA); else WiFi.mode(WIFI_STA);
   WiFi.begin(ssid.c_str(), pass.c_str());
   Serial.printf("Connecting to '%s'", ssid.c_str());
   uint32_t start = millis();
@@ -46,17 +48,19 @@ void setup() {
   delay(50);
   Serial.println();
   Serial.println(F("ESP32 Wi-Fi + LED status"));
+  // Start setup portal (AP) so user can connect immediately
+  Portal::begin(nullptr, nullptr);
 
   // Try saved credentials; if none or fails, start config portal
   String ssid, pass;
   if (WifiConfig::load(ssid, pass)) {
     if (!connectWiFi(ssid, pass)) {
       Serial.println(F("Starting config portal (failed to connect)"));
-      Portal::begin(nullptr, nullptr);
+      /* portal running */ (void)0;
     }
   } else {
     Serial.println(F("No saved Wi‑Fi. Starting config portal."));
-    Portal::begin(nullptr, nullptr);
+    /* portal running */ (void)0;
   }
 }
 
@@ -113,3 +117,7 @@ void loop() {
 
   delay(10);
 }
+
+
+
+
