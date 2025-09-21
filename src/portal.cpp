@@ -14,6 +14,18 @@ namespace {
   bool g_running = false;
   bool g_newCreds = false;
 
+#ifndef LED_BUILTIN
+#define LED_BUILTIN 2
+#endif
+  // Active-high by default; change here if your board LED is active-low
+  static const bool LED_ACTIVE_HIGH = true;
+  static bool ledOn = false;
+  static inline void writeLed(bool on){
+    pinMode(LED_BUILTIN, OUTPUT);
+    digitalWrite(LED_BUILTIN, (on ^ !LED_ACTIVE_HIGH) ? HIGH : LOW);
+    ledOn = on;
+  }
+
   String apName() {
     uint32_t chip = (uint32_t)ESP.getEfuseMac();
     char buf[32];
@@ -95,9 +107,19 @@ namespace Portal {
     const char* pass = apPass ? apPass : "12345678";
     WiFi.softAP(ssid.c_str(), pass);
     delay(100);
-    Serial.print("Config portal AP IP: "); Serial.println(WiFi.softAPIP());
+    IPAddress apIp = WiFi.softAPIP();
+    Serial.println();
+    Serial.println(F("==== ESP32 Setup Portal ===="));
+    Serial.print (F("AP SSID: ")); Serial.println(ssid);
+    Serial.print (F("AP Pass: ")); Serial.println(pass);
+    Serial.print (F("AP IP:   ")); Serial.println(apIp);
     // Captive DNS: answer all domains to our AP IP
-    dns.start(53, "*", WiFi.softAPIP());
+    dns.start(53, "*", apIp);
+    Serial.println(F("Captive DNS: active (all domains resolve to AP IP)"));
+    Serial.println(F("Open one of these in your browser after joining the AP:"));
+    Serial.println(F("  • http://192.168.4.1/"));
+    Serial.println(F("  • http://192.168.4.1/setup.html"));
+    Serial.println(F("  • http://esp32.setup/  (any host should redirect)"));
 
     // Root -> redirect to setup.html if present, else handleRoot fallback
     server.on("/", [] {
@@ -120,7 +142,35 @@ namespace Portal {
     server.on("/fwlink", [] { handleRoot(); });
     server.on("/scan", handleScan);
     server.on("/save", HTTP_POST, handleSave);
-    server.onNotFound(handleRoot);
+    // Device status: Wi‑Fi + Internet reachability
+    server.on("/status", HTTP_GET, []{
+      bool connected = (WiFi.status() == WL_CONNECTED);
+      IPAddress ip = connected ? WiFi.localIP() : IPAddress(0,0,0,0);
+      String ssid = connected ? WiFi.SSID() : String();
+      int rssi = connected ? WiFi.RSSI() : 0;
+      bool internet = false;
+      if (connected) {
+        IPAddress probe;
+        internet = (WiFi.hostByName("example.com", probe) == 1);
+      }
+      String json = String("{\"connected\":") + (connected?"true":"false") +
+                    ",\"ssid\":\"" + ssid + "\"" +
+                    ",\"ip\":\"" + ip.toString() + "\"" +
+                    ",\"rssi\":" + String(rssi) +
+                    ",\"internet\":" + (internet?"true":"false") +
+                    "}";
+      server.send(200, "application/json", json);
+    });
+    // LED control endpoints (work both before/after STA connect)
+    server.on("/state", HTTP_GET, []{
+      server.send(200, "application/json", String("{\"on\":") + (ledOn?"true":"false") + "}");
+    });
+    server.on("/on", HTTP_GET, []{ writeLed(true); server.send(200, "application/json", "{\"on\":true}"); });
+    server.on("/off", HTTP_GET, []{ writeLed(false); server.send(200, "application/json", "{\"on\":false}"); });
+    server.onNotFound([]{
+      String path = server.uri();
+      if (!serveFile(path)) handleRoot();
+    });
     server.begin();
     g_running = true; g_newCreds = false;
   }

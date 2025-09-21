@@ -87,8 +87,7 @@ void loop() {
       if (WifiConfig::load(ssid, pass)) {
         Serial.println(F("Credentials saved. Trying to connect..."));
         if (connectWiFi(ssid, pass, 15000)) {
-          Serial.println(F("Connected. Closing portal."));
-          Portal::stop();
+          Serial.println(F("Connected. Portal remains active."));
         } else {
           Serial.println(F("Connect failed. Portal stays open."));
         }
@@ -102,9 +101,7 @@ void loop() {
   const uint32_t BLINK_INTERVAL_MS = 167;      // ~3 blinks per second (3 Hz)
 
   if (WiFi.status() == WL_CONNECTED) {
-    // Solid ON when connected
-    writeLed(true);
-    blinkState = true; // keep internal state in sync
+    // Connected: controller (web) can manage LED; no blink here
   } else {
     // Not connected: blink at ~3 Hz (toggle about every 167 ms)
     uint32_t now = millis();
@@ -117,6 +114,8 @@ void loop() {
 
   delay(10);
 }
+
+
 
 
 

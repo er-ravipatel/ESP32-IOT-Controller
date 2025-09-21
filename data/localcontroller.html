@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0a84ff">
+    <title>ESP32 Local Controller</title>
+
+    <!-- Styles -->
+    <style>
+      /* =Variables */
+      :root {
+        --bg:#0d1117; 
+        --panel:#161b22; 
+        --text:#c9d1d9; 
+        --muted:#8b949e; 
+        --primary:#0a84ff; 
+        --shadow:0 14px 40px rgba(0,0,0,.28);
+        --radius-card: 16px; 
+        --radius-btn: .55rem; 
+        --gap-12: 12px;
+      }
+      @media (prefers-color-scheme: light) {
+        :root { 
+          --bg:#f6f8fa; 
+          --panel:#fff; 
+          --text:#24292f; 
+          --muted:#57606a; 
+          --shadow:0 12px 30px rgba(140,149,159,.25); }
+      }
+
+      /* =Base */
+      * { box-sizing: border-box; }
+      html, body {
+         height: 100%; 
+        }
+      body {
+        margin:0; 
+        background: linear-gradient(180deg, var(--bg), rgba(0,0,0,.08)); 
+        color: var(--text);
+        font: 16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, sans-serif;
+        display: grid; 
+        place-items: center;
+      }
+
+      /* =Layout */
+      main.card { 
+        width: min(560px, 94vw); 
+        background: var(--panel); 
+        border-radius: var(--radius-card); 
+        box-shadow: var(--shadow); 
+        padding: 22px; }
+      h1 { 
+        margin: 0 0 6px; 
+        font-size: 22px; 
+      }
+      .row { 
+        display: flex; 
+        align-items: center; 
+      }
+      .row-gap-12 { 
+        gap: var(--gap-12);
+       }
+      .status { 
+        font-weight: 700; 
+      }
+      .muted { 
+        color: var(--muted); font-size: .9rem;
+       }
+
+      /* =Components */
+      .bulb { 
+        width: 16px; 
+        height: 16px; 
+        border-radius: 50%; 
+        background: #444; 
+        box-shadow: 0 0 0 3px rgba(0,0,0,.15) inset, 0 0 24px rgba(255,220,100,0); 
+        transition: .25s; }
+      .bulb.on { 
+        background: #ffd54a; 
+        box-shadow: 0 0 0 3px rgba(0,0,0,.15) inset, 0 0 24px rgba(255,213,74,.9), 0 0 60px rgba(255,213,74,.4);
+       }
+      .dot { 
+        width: 10px; 
+        height: 10px; 
+        border-radius: 50%; 
+        display: inline-block; 
+        background: #9aa0a6; 
+        vertical-align: -1px; 
+      }
+      .dot.ok { background: #22c55e; }
+      .dot.err { background: #ef4444; }
+      .dot.warn { background: #f59e0b; }
+      .switch { 
+        position: relative; 
+        width: 64px; 
+        height: 36px; 
+        background: #737c89; 
+        border-radius: 999px; 
+        cursor: pointer; 
+        transition: .2s; 
+      }
+      .switch input { 
+        position: absolute; 
+        width: 100%; 
+        height: 100%; 
+        opacity: 0; 
+        margin: 0; 
+        cursor: pointer; 
+      }
+      .knob { 
+        position: absolute; 
+        top: 3px; 
+        left: 3px; 
+        width: 30px; 
+        height: 30px; 
+        background: #fff; 
+        border-radius: 50%; 
+        box-shadow: 0 4px 12px rgba(0,0,0,.25); 
+        transition: transform .2s; 
+      }
+      .switch input:checked + .knob { 
+        transform: translateX(28px); 
+      }
+      .switch.on { 
+        background: var(--primary); 
+      }
+      .switch input:focus-visible + .knob { 
+        box-shadow: 0 0 0 3px rgba(10,132,255,.35), 0 4px 12px rgba(0,0,0,.25); 
+      }
+
+      .actions { 
+        display: flex; 
+        gap: .5rem; 
+        margin-top: 10px; 
+      }
+      .btn { 
+        padding: .6rem .9rem; 
+        border-radius: var(--radius-btn); 
+        border: 1px solid transparent; 
+        text-decoration: none; 
+        color: #fff; 
+        background: var(--primary); 
+        box-shadow: 0 4px 10px rgba(10,132,255,.25); 
+        user-select: none; 
+        -webkit-tap-highlight-color: transparent; 
+      }
+      .btn.secondary { 
+        background: #6b7280;
+       }
+      .btn.disabled, .btn:disabled { 
+        opacity: .6; 
+        pointer-events: none;
+       }
+      .btn:focus-visible { 
+        outline: none; 
+        box-shadow: 0 0 0 3px rgba(10,132,255,.35);
+      }
+    </style>
+  </head>
+
+  <body>
+    <!-- Content -->
+    <main class="card">
+      <h1 class="row"><span id="bulb" class="bulb"></span>&nbsp;Local LED Controller</h1>
+      <p class="row"><span class="status">LED:&nbsp;<span id="statusText">...</span></span></p>
+      <p class="row muted"><span id="netDot" class="dot"></span>&nbsp;<span id="netText">Checking connection…</span></p>
+
+      <div class="row row-gap-12">
+        <label class="switch" id="switch"><input id="toggle" type="checkbox"><span class="knob"></span></label>
+        <span class="muted">Toggle to turn LED on or off</span>
+      </div>
+
+      <div class="actions">
+        <a href="#" id="btnOn" class="btn">Turn On</a>
+        <a href="#" id="btnOff" class="btn secondary">Turn Off</a>
+      </div>
+
+      <p id="info" class="muted" aria-live="polite"></p>
+    </main>
+
+    <!-- Script -->
+    <script>
+      // DOM references
+      const bulb       = document.getElementById('bulb');
+      const statusEl   = document.getElementById('statusText');
+      const toggle     = document.getElementById('toggle');
+      const switchEl   = document.getElementById('switch');
+      const btnOn      = document.getElementById('btnOn');
+      const btnOff     = document.getElementById('btnOff');
+      const infoEl     = document.getElementById('info');
+      const netDot     = document.getElementById('netDot');
+      const netText    = document.getElementById('netText');
+
+      // App state
+      let state = { on: false };
+
+      // Render UI from state
+      function render() {
+        statusEl.textContent = state.on ? 'ON' : 'OFF';
+        bulb.classList.toggle('on', state.on);
+        toggle.checked = state.on;
+        switchEl.classList.toggle('on', state.on);
+        btnOn.classList.toggle('disabled',  state.on);
+        btnOff.classList.toggle('disabled', !state.on);
+      }
+
+      // Call device endpoints; parse JSON responses when provided
+      async function call(path) {
+        const res = await fetch(path, { cache: 'no-store' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const ct = res.headers.get('content-type') || '';
+        if (ct.includes('application/json')) return res.json();
+        return null;
+      }
+
+      // Refresh state from device
+      async function refresh() {
+        try {
+          const j = await call('/state');
+          if (j && typeof j.on === 'boolean') {
+            state.on = j.on;
+            render();
+          }
+        } catch (e) {
+          infoEl.textContent = 'Device not responding';
+        }
+      }
+
+      // Refresh device Wi‑Fi + internet status
+      async function refreshStatus() {
+        try {
+          const s = await call('/status');
+          netDot.classList.remove('ok', 'err', 'warn');
+          if (s && s.connected === true) {
+            const ssid = s.ssid || '(unknown)';
+            const ip = s.ip || '0.0.0.0';
+            const rssi = Number.isFinite(s.rssi) ? s.rssi : NaN;
+            const internet = !!s.internet;
+
+            // Map RSSI to a friendly signal label
+            let signal = '';
+            if (Number.isFinite(rssi)) {
+              if (rssi >= -55) signal = 'Excellent';
+              else if (rssi >= -67) signal = 'Good';
+              else if (rssi >= -75) signal = 'Fair';
+              else signal = 'Weak';
+            }
+
+            netDot.classList.add(internet ? 'ok' : 'warn');
+            netText.textContent =
+              `Connected to ${ssid} (${ip})` +
+              (signal ? ` • Signal: ${signal} (${rssi} dBm)` : '') +
+              ` • Internet: ${internet ? 'Yes' : 'No'}`;
+          } else {
+            netDot.classList.add('err');
+            netText.textContent = 'Not connected to Wi‑Fi';
+          }
+        } catch (e) {
+          netDot.classList.remove('ok');
+          netDot.classList.add('err');
+          netText.textContent = 'Status unavailable';
+        }
+      }
+
+      // Change LED state then re-sync
+      async function setLed(on) {
+        if (on === state.on) return; // no-op
+        infoEl.textContent = on ? 'Turning ON...' : 'Turning OFF...';
+        btnOn.classList.add('disabled');
+        btnOff.classList.add('disabled');
+        try {
+          await call(on ? '/on' : '/off');
+          await refresh();
+          infoEl.textContent = on ? 'Turned ON' : 'Turned OFF';
+        } catch (e) {
+          infoEl.textContent = 'Action failed';
+        } finally {
+          render();
+        }
+      }
+
+      // Events
+      toggle.addEventListener('change', () => setLed(toggle.checked));
+      btnOn .addEventListener('click', (e) => { e.preventDefault(); setLed(true);  });
+      btnOff.addEventListener('click', (e) => { e.preventDefault(); setLed(false); });
+
+      // Initial load + periodic sync
+      refresh();
+      refreshStatus();
+      setInterval(refresh, 4000);
+      setInterval(refreshStatus, 7000);
+    </script>
+  </body>
+  </html>
