@@ -13,6 +13,7 @@
 // ------------------------------------------------
 #include <Arduino.h>
 #include <WiFi.h>
+#include <ESPmDNS.h>
 #include "wifi_config.h"
 #include "portal.h"
 #include "mqtt_min.h"
@@ -96,6 +97,22 @@ void setup() {
 
 void loop() {
   static uint32_t lastAttempt = 0;
+  static bool mdnsStarted = false;
+  // Bring up mDNS hostname on STA once connected
+  if (WiFi.status() == WL_CONNECTED && !mdnsStarted) {
+    uint64_t mac = ESP.getEfuseMac();
+    char host[32];
+    snprintf(host, sizeof(host), "esp32-%02x%02x%02x%02x%02x%02x",
+             (uint8_t)(mac >> 40), (uint8_t)(mac >> 32), (uint8_t)(mac >> 24),
+             (uint8_t)(mac >> 16), (uint8_t)(mac >> 8),  (uint8_t)(mac >> 0));
+    if (MDNS.begin(host)) {
+      MDNS.addService("http", "tcp", 80);
+      Serial.print(F("mDNS: hostname http://")); Serial.print(host); Serial.println(F(".local"));
+      mdnsStarted = true;
+    } else {
+      Serial.println(F("mDNS: start failed"));
+    }
+  }
 
   // Background: reconnect every 5s if STA is down and portal is not running
   if (WiFi.status() != WL_CONNECTED && !Portal::running()) {

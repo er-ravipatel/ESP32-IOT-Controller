@@ -191,11 +191,18 @@ namespace Portal {
         IPAddress probe;
         internet = (WiFi.hostByName("example.com", probe) == 1);
       }
+      // Derive mDNS hostname used by the device (matches main.cpp logic)
+      char host[32];
+      uint64_t mac = ESP.getEfuseMac();
+      snprintf(host, sizeof(host), "esp32-%02x%02x%02x%02x%02x%02x",
+               (uint8_t)(mac >> 40), (uint8_t)(mac >> 32), (uint8_t)(mac >> 24),
+               (uint8_t)(mac >> 16), (uint8_t)(mac >> 8),  (uint8_t)(mac >> 0));
       String json = String("{\"connected\":") + (connected?"true":"false") +
                     ",\"ssid\":\"" + ssid + "\"" +
                     ",\"ip\":\"" + ip.toString() + "\"" +
                     ",\"rssi\":" + String(rssi) +
                     ",\"internet\":" + (internet?"true":"false") +
+                    ",\"mdns\":\"" + String(host) + ".local\"" +
                     "}";
       server.send(200, "application/json", json);
     });
