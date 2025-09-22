@@ -19,6 +19,7 @@
 #include "wifi_config.h"
 #include "hx711_service.h"
 #include "relay.h"
+#include "relays.h"
 
 namespace {
   WebServer server(80);
@@ -219,22 +220,21 @@ namespace Portal {
       writeLed(next);
       server.send(200, "application/json", String("{\"on\":") + (next?"true":"false") + "}");
     });
-    // Relay control endpoints
-    server.on("/relay/state", HTTP_GET, []{
-      server.send(200, "application/json", String("{\"on\":") + (Relay::get()?"true":"false") + "}");
-    });
-    server.on("/relay/on", HTTP_GET, []{
-      Relay::set(true);
-      server.send(200, "application/json", "{\"on\":true}");
-    });
-    server.on("/relay/off", HTTP_GET, []{
-      Relay::set(false);
-      server.send(200, "application/json", "{\"on\":false}");
-    });
-    server.on("/relay/toggle", HTTP_GET, []{
-      Relay::toggle();
-      server.send(200, "application/json", String("{\"on\":") + (Relay::get()?"true":"false") + "}");
-    });
+    // Relay control endpoints (single/compat)
+    server.on("/relay/state", HTTP_GET, []{ server.send(200, "application/json", String("{\"on\":") + (Relay::get()?"true":"false") + "}"); });
+    server.on("/relay/on", HTTP_GET, []{ Relay::set(true); server.send(200, "application/json", "{\"on\":true}"); });
+    server.on("/relay/off", HTTP_GET, []{ Relay::set(false); server.send(200, "application/json", "{\"on\":false}"); });
+    server.on("/relay/toggle", HTTP_GET, []{ Relay::toggle(); server.send(200, "application/json", String("{\"on\":") + (Relay::get()?"true":"false") + "}"); });
+
+    // Per-channel relay endpoints: /relay/{i}/on, /relay/{i}/off, /relay/{i}/toggle, /relay/{i}/state (1-based)
+    for (size_t i = 1; i <= Relays::count(); ++i) {
+      const String base = String("/relay/") + String(i);
+      const int idx = (int)i - 1;
+      server.on((base + "/state").c_str(), HTTP_GET, [idx]{ server.send(200, "application/json", String("{\"on\":") + (Relays::get(idx)?"true":"false") + "}"); });
+      server.on((base + "/on").c_str(),    HTTP_GET, [idx]{ Relays::set(idx, true);  server.send(200, "application/json", "{\"on\":true}"); });
+      server.on((base + "/off").c_str(),   HTTP_GET, [idx]{ Relays::set(idx, false); server.send(200, "application/json", "{\"on\":false}"); });
+      server.on((base + "/toggle").c_str(),HTTP_GET, [idx]{ Relays::toggle(idx);      server.send(200, "application/json", String("{\"on\":") + (Relays::get(idx)?"true":"false") + "}"); });
+    }
     server.onNotFound([]{
       String path = server.uri();
       if (!serveFile(path)) handleRoot();

@@ -7,6 +7,7 @@
 #include "client_certs.h"
 #include <time.h>
 #include "relay.h"
+#include "relays.h"
 
 #ifndef LED_BUILTIN
 #define LED_BUILTIN 2
@@ -62,15 +63,40 @@ namespace {
     g_lastStatePub = now;
   }
 
+  String replaceSuffix(const String& base, const char* oldSuffix, const String& replacement) {
+    int p = base.lastIndexOf(oldSuffix);
+    if (p < 0) return base + '/' + replacement;
+    return base.substring(0, p) + '/' + replacement;
+  }
+
+  String relayCmdTopicFor(size_t idx1) { // 1-based index in topic
+    return replaceSuffix(String(MQTT_TOPIC_RELAY_CMD), "/cmd", String(idx1) + "/cmd");
+  }
+  String relayStateTopicFor(size_t idx1) {
+    return replaceSuffix(String(MQTT_TOPIC_RELAY_STATE), "/state", String(idx1) + "/state");
+  }
+
   void publishRelayState(bool force=false) {
     if (!g_mqtt.connected()) return;
     uint32_t now = millis();
     if (!force && (now - g_lastRelayStatePub) < 30000) return; // heartbeat 30s
-    String payload = String("{\"on\":") + (Relay::get()?"true":"false") + "}";
-    bool ok = g_mqtt.publish(MQTT_TOPIC_RELAY_STATE, payload.c_str(), true);
-    Serial.print(F("MQTT: publish ")); Serial.print(MQTT_TOPIC_RELAY_STATE);
-    Serial.print(F(" payload=")); Serial.print(payload);
-    Serial.print(F(" result=")); Serial.println(ok ? F("OK") : F("FAIL"));
+    // Publish ch1 (compat)
+    {
+      String payload = String("{\"on\":") + (Relay::get()?"true":"false") + "}";
+      bool ok = g_mqtt.publish(MQTT_TOPIC_RELAY_STATE, payload.c_str(), true);
+      Serial.print(F("MQTT: publish ")); Serial.print(MQTT_TOPIC_RELAY_STATE);
+      Serial.print(F(" payload=")); Serial.print(payload);
+      Serial.print(F(" result=")); Serial.println(ok ? F("OK") : F("FAIL"));
+    }
+    // Publish each configured relay channel
+    for (size_t i1 = 1; i1 <= Relays::count(); ++i1) {
+      String topic = relayStateTopicFor(i1);
+      String payload = String("{\"on\":") + (Relays::get(i1-1)?"true":"false") + "}";
+      bool ok = g_mqtt.publish(topic.c_str(), payload.c_str(), true);
+      Serial.print(F("MQTT: publish ")); Serial.print(topic);
+      Serial.print(F(" payload=")); Serial.print(payload);
+      Serial.print(F(" result=")); Serial.println(ok ? F("OK") : F("FAIL"));
+    }
     g_lastRelayStatePub = now;
   }
 
@@ -88,11 +114,25 @@ namespace {
       else { Serial.println(F("MQTT: unknown LED command")); }
       publishState(true);
     } else if (t == MQTT_TOPIC_RELAY_CMD) {
-      if (u == "ON" || u == "1") { Relay::set(true);  Serial.println(F("Relay: ON (via MQTT)")); }
-      else if (u == "OFF" || u == "0") { Relay::set(false); Serial.println(F("Relay: OFF (via MQTT)")); }
-      else if (u == "TOGGLE" || u == "T") { Relay::toggle(); Serial.println(F("Relay: TOGGLE (via MQTT)")); }
+      if (u == "ON" || u == "1") { Relay::set(true);  Serial.println(F("Relay[1]: ON (via MQTT)")); }
+      else if (u == "OFF" || u == "0") { Relay::set(false); Serial.println(F("Relay[1]: OFF (via MQTT)")); }
+      else if (u == "TOGGLE" || u == "T") { Relay::toggle(); Serial.println(F("Relay[1]: TOGGLE (via MQTT)")); }
       else { Serial.println(F("MQTT: unknown RELAY command")); }
       publishRelayState(true);
+    } else {
+      // Per-channel topics
+      for (size_t i1 = 1; i1 <= Relays::count(); ++i1) {
+        if (t == relayCmdTopicFor(i1)) {
+          size_t idx = i1 - 1;
+          if (u == "ON" || u == "1") { Relays::set(idx, true);  Serial.print(F("Relay[")); Serial.print((int)i1); Serial.println(F("]: ON (via MQTT)")); }
+          else if (u == "OFF" || u == "0") { Relays::set(idx, false); Serial.print(F("Relay[")); Serial.print((int)i1); Serial.println(F("]: OFF (via MQTT)")); }
+          else if (u == "TOGGLE" || u == "T") { Relays::toggle(idx); Serial.print(F("Relay[")); Serial.print((int)i1); Serial.println(F("]: TOGGLE (via MQTT)")); }
+          else { Serial.println(F("MQTT: unknown RELAY command")); }
+          String payload = String("{\"on\":") + (Relays::get(idx)?"true":"false") + "}";
+          g_mqtt.publish(relayStateTopicFor(i1).c_str(), payload.c_str(), true);
+          break;
+        }
+      }
     }
   }
 
@@ -167,6 +207,12 @@ namespace {
       Serial.print(F("MQTT: subscribed to ")); Serial.println(MQTT_TOPIC_CMD);
       g_mqtt.subscribe(MQTT_TOPIC_RELAY_CMD);
       Serial.print(F("MQTT: subscribed to ")); Serial.println(MQTT_TOPIC_RELAY_CMD);
+      // Subscribe per-relay command topics
+      for (size_t i1 = 1; i1 <= Relays::count(); ++i1) {
+        String t = relayCmdTopicFor(i1);
+        g_mqtt.subscribe(t.c_str());
+        Serial.print(F("MQTT: subscribed to ")); Serial.println(t);
+      }
       publishState(true);
       publishRelayState(true);
       g_nextTryDelay = 5000; // reset backoff on success
@@ -206,6 +252,4 @@ namespace MqttMin {
     return g_mqtt.publish(topic, payload, retained);
   }
 }
-
-
 

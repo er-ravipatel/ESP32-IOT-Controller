@@ -19,6 +19,7 @@
 #include "mqtt_min.h"
 #include "hx711_service.h"
 #include "relay.h"
+#include "relays.h"
 
 #ifndef LED_BUILTIN
 #define LED_BUILTIN 2  // Fallback for common ESP32 dev boards
@@ -79,8 +80,17 @@ void setup() {
   MqttMin::begin();
   // Start HX711 (uses default pins 32:DOUT, 33:SCK; change via HX711_DOUT_PIN/HX711_SCK_PIN)
   HxService::begin();
-  // Start Relay (default pin 26, active-high). Override via RELAY_PIN / RELAY_ACTIVE_HIGH.
-  Relay::begin();
+  // Start Relays: support up to 4 channels (pins via RELAY1_PIN..RELAY4_PIN)
+  {
+    const int pins[] = { RELAY1_PIN, RELAY2_PIN, RELAY3_PIN, RELAY4_PIN };
+    Relays::begin(pins, sizeof(pins)/sizeof(pins[0]), (RELAY_ACTIVE_HIGH != 0));
+    // Backward compatibility: initialize single-relay facade for channel 0 if present
+    if (Relays::count() > 0) {
+      Relay::begin(Relays::pin(0), Relays::activeHigh(0));
+    } else {
+      Relay::begin();
+    }
+  }
 
   // Try saved credentials; if none or connect fails, keep the portal up
   String ssid, pass;

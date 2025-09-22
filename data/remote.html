@@ -86,12 +86,16 @@
             <input id="s_ledState" placeholder="esp32/led/state">
           </div>
           <div>
-            <label>Relay Cmd Topic</label>
+            <label>Relay Cmd Topic (base)</label>
             <input id="s_relCmd" placeholder="esp32/relay/cmd">
           </div>
           <div>
-            <label>Relay State Topic</label>
+            <label>Relay State Topic (base)</label>
             <input id="s_relState" placeholder="esp32/relay/state">
+          </div>
+          <div>
+            <label>Relay Channels</label>
+            <input id="s_relCount" type="number" min="1" max="8" placeholder="4">
           </div>
           <div>
             <label>HX711 Topic</label>
@@ -122,13 +126,8 @@
           <div id="ledInfo" class="muted"></div>
         </div>
         <div class="section">
-          <h4>Relay</h4>
-          <div>State: <strong id="relLive" class="muted">…</strong></div>
-          <div class="actions">
-            <button id="relOn" class="btn">Relay ON</button>
-            <button id="relOff" class="btn secondary">Relay OFF</button>
-          </div>
-          <div id="relInfo" class="muted"></div>
+          <h4>Relays</h4>
+          <div id="relaysBox" class="grid" style="grid-template-columns:1fr 1fr"></div>
         </div>
         <div class="section" style="grid-column:1 / -1">
           <h4>HX711</h4>
@@ -155,6 +154,7 @@
         ledState: 'esp32/led/state',
         relCmd: 'esp32/relay/cmd',
         relState: 'esp32/relay/state',
+        relayCount: 4,
         hxTopic: 'esp32/hx711/weight',
         httpBase: ''
       };
@@ -171,13 +171,12 @@
       const hostInfo = $('hostInfo');
       const settingsEl = $('settings');
       const s_host=$('s_host'), s_port=$('s_port'), s_path=$('s_path'), s_user=$('s_user'), s_pass=$('s_pass'), s_client=$('s_client');
-      const s_ledCmd=$('s_ledCmd'), s_ledState=$('s_ledState'), s_relCmd=$('s_relCmd'), s_relState=$('s_relState'), s_hx=$('s_hx');
+      const s_ledCmd=$('s_ledCmd'), s_ledState=$('s_ledState'), s_relCmd=$('s_relCmd'), s_relState=$('s_relState'), s_relCount=$('s_relCount'), s_hx=$('s_hx');
       const s_http=$('s_http');
 
-      const ledLive=$('ledLive'), relLive=$('relLive'), ledInfo=$('ledInfo'), relInfo=$('relInfo');
+      const ledLive=$('ledLive'), ledInfo=$('ledInfo');
       const hxVal=$('hxVal'), hxUnit=$('hxUnit'), hxRaw=$('hxRaw'), hxAge=$('hxAge');
       const ledOnBtn=$('ledOn'), ledOffBtn=$('ledOff'), ledTogBtn=$('ledTog');
-      const relOnBtn=$('relOn'), relOffBtn=$('relOff');
 
       // Shared state
       let CFG = loadSettings();
@@ -189,7 +188,7 @@
         s_host.value = CFG.host; s_port.value = CFG.port; s_path.value = CFG.path;
         s_user.value = CFG.username || ''; s_pass.value = CFG.password || '';
         s_client.value = CFG.clientId; s_ledCmd.value=CFG.ledCmd; s_ledState.value=CFG.ledState;
-        s_relCmd.value=CFG.relCmd; s_relState.value=CFG.relState; s_hx.value=CFG.hxTopic; s_http.value=CFG.httpBase;
+        s_relCmd.value=CFG.relCmd; s_relState.value=CFG.relState; s_relCount.value=CFG.relayCount; s_hx.value=CFG.hxTopic; s_http.value=CFG.httpBase;
         hostInfo.textContent = `${CFG.host}:${CFG.port}${CFG.path}`;
       }
       function readSettingsFromUI(){
@@ -204,6 +203,7 @@
           ledState: s_ledState.value.trim() || DEFAULTS.ledState,
           relCmd: s_relCmd.value.trim() || DEFAULTS.relCmd,
           relState: s_relState.value.trim() || DEFAULTS.relState,
+          relayCount: Math.max(1, Math.min(8, Number(s_relCount.value)||DEFAULTS.relayCount)),
           hxTopic: s_hx.value.trim() || DEFAULTS.hxTopic,
           httpBase: s_http.value.trim()
         };
@@ -212,7 +212,7 @@
       // Fill settings on load
       applySettingsToUI();
       $('btnSettings').onclick = ()=> settingsEl.open = !settingsEl.open;
-      $('btnSave').onclick = ()=>{ readSettingsFromUI(); saveSettings(CFG); applySettingsToUI(); };
+      $('btnSave').onclick = ()=>{ readSettingsFromUI(); saveSettings(CFG); applySettingsToUI(); renderRelays(); };
 
       // Optional HTTP helpers (requires device CORS)
       async function httpJSON(path, timeoutMs=2500){
@@ -243,23 +243,46 @@
           }
         } finally { ledInfo.textContent = ''; }
       }
-      async function doRelay(on){
-        relInfo.textContent = 'Working…';
-        try{
-          if (mqttConnected && client) {
-            relOnBtn.classList.toggle('disabled', on===true);
-            relOffBtn.classList.toggle('disabled', on===false);
-            client.publish(CFG.relCmd, on?'ON':'OFF');
-          } else {
-            await httpJSON(on?'/relay/on':'/relay/off');
-          }
-        } finally { relInfo.textContent = ''; }
+      function relayCmdTopicFor(i){
+        const base = CFG.relCmd.replace(/\/cmd$/, '');
+        return `${base}/${i}/cmd`;
       }
-      $('ledOn').onclick = ()=> doLed('ON');
-      $('ledOff').onclick= ()=> doLed('OFF');
-      $('ledTog').onclick= ()=> doLed('TOGGLE');
-      $('relOn').onclick = ()=> doRelay(true);
-      $('relOff').onclick= ()=> doRelay(false);
+      function relayStateTopicFor(i){
+        const base = CFG.relState.replace(/\/state$/, '');
+        return `${base}/${i}/state`;
+      }
+
+      function renderRelays(){
+        const box = document.getElementById('relaysBox');
+        box.innerHTML = '';
+        for (let i=1;i<=CFG.relayCount;i++){
+          const row = document.createElement('div');
+          row.className = 'section';
+          row.innerHTML = `
+            <div class="row" style="justify-content:space-between">
+              <strong>Relay ${i}</strong>
+              <span id="relState_${i}" class="muted">…</span>
+            </div>
+            <div class="actions">
+              <button id="relOn_${i}" class="btn">ON</button>
+              <button id="relOff_${i}" class="btn secondary">OFF</button>
+            </div>`;
+          box.appendChild(row);
+          const onB = document.getElementById(`relOn_${i}`);
+          const offB = document.getElementById(`relOff_${i}`);
+          onB.onclick = async ()=>{
+            if (mqttConnected && client) client.publish(relayCmdTopicFor(i), 'ON');
+            else await httpJSON(`/relay/${i}/on`);
+          };
+          offB.onclick = async ()=>{
+            if (mqttConnected && client) client.publish(relayCmdTopicFor(i), 'OFF');
+            else await httpJSON(`/relay/${i}/off`);
+          };
+        }
+      }
+      document.getElementById('ledOn').onclick = ()=> doLed('ON');
+      document.getElementById('ledOff').onclick= ()=> doLed('OFF');
+      document.getElementById('ledTog').onclick= ()=> doLed('TOGGLE');
 
       // MQTT connect/disconnect
       function connect(){
@@ -280,7 +303,8 @@
         client = mqtt.connect(url, options);
         client.on('connect', ()=>{
           mqttConnected = true; connEl.textContent = 'Connected'; connEl.className = 'ok';
-          client.subscribe([CFG.ledState, CFG.relState, CFG.hxTopic]);
+          client.subscribe([CFG.ledState, CFG.hxTopic]);
+          for (let i=1;i<=CFG.relayCount;i++) client.subscribe(relayStateTopicFor(i));
         });
         client.on('reconnect', ()=>{ connEl.textContent = 'Reconnecting…'; connEl.className = 'warn'; });
         client.on('offline',  ()=>{ connEl.textContent = 'Offline'; connEl.className = 'warn'; });
@@ -292,8 +316,6 @@
             const s = String(payload);
             if (topic === CFG.ledState) {
               const j = JSON.parse(s); const on = !!j.on; $('ledLive').textContent = on?'ON':'OFF'; $('ledLive').className = on?'ok':'warn';
-            } else if (topic === CFG.relState) {
-              const j = JSON.parse(s); const on = !!j.on; $('relLive').textContent = on?'ON':'OFF'; $('relLive').className = on?'ok':'warn';
             } else if (topic === CFG.hxTopic) {
               const j = JSON.parse(s);
               if (typeof j.value === 'number') $('hxVal').textContent = j.value.toFixed(3);
@@ -301,6 +323,13 @@
               if (typeof j.raw  !== 'undefined') $('hxRaw').textContent = String(j.raw);
               if (typeof j.age_ms !== 'undefined') { $('hxAge').textContent = String(j.age_ms) + ' ms'; lastHxAt = Date.now(); }
               else { lastHxAt = Date.now(); $('hxAge').textContent = '0 ms'; }
+            } else {
+              for (let i=1;i<=CFG.relayCount;i++){
+                if (topic === relayStateTopicFor(i)){
+                  const j = JSON.parse(s); const on = !!j.on;
+                  const el = document.getElementById(`relState_${i}`); if (el){ el.textContent = on?'ON':'OFF'; el.className = on?'ok':'warn'; }
+                }
+              }
             }
           } catch(_){ }
         });
@@ -311,8 +340,8 @@
 
       // Init
       applySettingsToUI();
+      renderRelays();
       setInterval(()=>{ if (lastHxAt) $('hxAge').textContent = (Date.now()-lastHxAt) + ' ms'; }, 500);
     </script>
   </body>
   </html>
-
