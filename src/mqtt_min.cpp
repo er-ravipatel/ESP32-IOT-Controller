@@ -28,6 +28,23 @@ namespace {
   bool g_timeReady = false;        // SNTP time set
   uint32_t g_timeStart = 0;        // when SNTP was started
 
+  // Buffer for an auto-generated MQTT client ID (stable per device)
+  // Example: "esp32-A1B2C3D4E5F6"
+  char g_clientId[32] = {0};
+
+  static void ensureClientIdGenerated() {
+    if (MQTT_CLIENT_ID && MQTT_CLIENT_ID[0] != '\\0') return; // user provided
+    uint64_t mac = ESP.getEfuseMac();
+    uint8_t b0 = (mac >> 40) & 0xFF;
+    uint8_t b1 = (mac >> 32) & 0xFF;
+    uint8_t b2 = (mac >> 24) & 0xFF;
+    uint8_t b3 = (mac >> 16) & 0xFF;
+    uint8_t b4 = (mac >>  8) & 0xFF;
+    uint8_t b5 = (mac >>  0) & 0xFF;
+    snprintf(g_clientId, sizeof(g_clientId), "esp32-RAVI-%02X%02X%02X%02X%02X%02X", b0,b1,b2,b3,b4,b5);
+    MQTT_CLIENT_ID = g_clientId;
+  }
+
   static bool timeIsSet() {
     time_t now = time(nullptr);
     return now > 1609459200; // > 2021-01-01
@@ -132,7 +149,12 @@ namespace {
 #endif
     g_mqtt.setServer(MQTT_HOST, MQTT_PORT);
     g_mqtt.setSocketTimeout(5);
-    Serial.print(F("MQTT: connecting (TLS, insecure) to ")); Serial.print(MQTT_HOST); Serial.print(':'); Serial.println(MQTT_PORT);
+#ifdef USE_MQTT_CA
+    Serial.print(F("MQTT: connecting (TLS, CA-validated) to "));
+#else
+    Serial.print(F("MQTT: connecting (TLS, insecure) to "));
+#endif
+    Serial.print(MQTT_HOST); Serial.print(':'); Serial.println(MQTT_PORT);
     g_mqtt.setCallback(onMsg);
     Serial.print(F("MQTT: clientId=")); Serial.println(MQTT_CLIENT_ID);
     if (strlen(MQTT_USER)) { Serial.print(F("MQTT: user=")); Serial.println(MQTT_USER); }
@@ -160,6 +182,8 @@ namespace {
 namespace MqttMin {
   void begin() {
     pinMode(LED_BUILTIN, OUTPUT);
+    // Build a device-unique MQTT client ID if none supplied
+    ensureClientIdGenerated();
     // Log configuration summary once
     Serial.println(F("MQTT: configured (will attempt after Wi‑Fi is up):"));
     Serial.print(F("  host=")); Serial.print(MQTT_HOST); Serial.print(F(" port=")); Serial.println(MQTT_PORT);

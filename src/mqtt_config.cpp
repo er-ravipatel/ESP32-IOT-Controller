@@ -6,7 +6,8 @@ const char* MQTT_HOST      = "y2d012bd.ala.eu-central-1.emqxsl.com"; // CHANGE i
 const uint16_t MQTT_PORT   = 8883;                // 1883 (TCP) or 8883 (TLS - not covered here)
 const char* MQTT_USER      = "ESP32-LOCK-VIK";                  // optional
 const char* MQTT_PASS      = "lkj082A%SD524";                  // optional
-const char* MQTT_CLIENT_ID = "esp32-Pune";    // change to a unique ID if using shared broker
+// Leave empty to auto-generate a unique ID from the device MAC (e.g., esp32-<MAC>)
+const char* MQTT_CLIENT_ID = "";
 
 // Topics
 const char* MQTT_TOPIC_CMD   = "esp32/led/cmd";   // publish ON/OFF/TOGGLE (or 1/0) to this topic
