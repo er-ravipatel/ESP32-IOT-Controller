@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ESP32 Relay MQTT Remote</title>
+    <style>
+      body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:2rem;line-height:1.5}
+      .card{max-width:680px;margin:0 auto;border:1px solid #e5e7eb;border-radius:12px;padding:16px}
+      .row{display:flex;gap:10px;align-items:center;margin:.5rem 0}
+      .muted{color:#6b7280}
+      .ok{color:#16a34a}.warn{color:#d97706}.err{color:#dc2626}
+      .btn{padding:.5rem .8rem;border:1px solid #d1d5db;border-radius:8px;cursor:pointer;background:#0a84ff;color:#fff}
+      .btn.secondary{background:#6b7280}
+    </style>
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  </head>
+  <body>
+    <main class="card">
+      <h2>ESP32 Relay - MQTT Remote Controller</h2>
+      <div class="row">Broker: <code id="hostInfo"></code></div>
+      <div class="row">Status: <span id="conn" class="muted">Connecting…</span></div>
+      <div class="row">Cmd topic: <code id="tcmd">esp32/relay/cmd</code></div>
+      <div class="row">State topic: <code id="tstate">esp32/relay/state</code></div>
+      <div class="row">
+        <button id="onBtn" class="btn">Relay ON</button>
+        <button id="offBtn" class="btn secondary">Relay OFF</button>
+      </div>
+      <div class="row">Relay: <strong id="state">unknown</strong></div>
+    </main>
+    <script>
+      const CFG = {
+        host: 'y2d012bd.ala.eu-central-1.emqxsl.com',
+        port: 8084,
+        path: '/mqtt',
+        username: 'ESP32-LOCK-VIK',
+        password: 'lkj082A%SD524',
+        topicCmd: 'esp32/relay/cmd',
+        topicState: 'esp32/relay/state',
+      };
+      document.getElementById('hostInfo').textContent = `${CFG.host}:${CFG.port}${CFG.path}`;
+      const conn = document.getElementById('conn');
+      const st = document.getElementById('state');
+      const onBtn = document.getElementById('onBtn');
+      const offBtn = document.getElementById('offBtn');
+
+      const url = `wss://${CFG.host}:${CFG.port}${CFG.path}`;
+      const opts = { clientId: 'web-' + Math.random().toString(16).slice(2,8), reconnectPeriod:2000, clean:true, connectTimeout:5000 };
+      if (CFG.username) opts.username = CFG.username;
+      if (CFG.password) opts.password = CFG.password;
+      const client = mqtt.connect(url, opts);
+      client.on('connect', ()=>{ conn.textContent='Connected'; conn.className='ok'; client.subscribe(CFG.topicState); });
+      client.on('reconnect', ()=>{ conn.textContent='Reconnecting…'; conn.className='warn'; });
+      client.on('close', ()=>{ conn.textContent='Disconnected'; conn.className='err'; });
+      client.on('error', ()=>{ conn.textContent='Error'; conn.className='err'; });
+      client.on('message', (t,p)=>{ if (t===CFG.topicState){ try{ const j=JSON.parse(String(p)); st.textContent = j.on ? 'ON' : 'OFF'; }catch(_){ } }});
+      onBtn.onclick = ()=> client.publish(CFG.topicCmd, 'ON');
+      offBtn.onclick= ()=> client.publish(CFG.topicCmd, 'OFF');
+    </script>
+  </body>
+  </html>
+

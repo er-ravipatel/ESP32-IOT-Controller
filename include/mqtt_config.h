@@ -15,3 +15,7 @@ extern const char* MQTT_TOPIC_CMD;   // subscribe here: expects "ON"/"OFF"/"TOGG
 extern const char* MQTT_TOPIC_STATE; // publish state JSON {"on":true|false}
 // HX711 publish topic (JSON: {"value":<float>,"raw":<int>,"unit":"units"})
 extern const char* MQTT_TOPIC_HX711;
+
+// Relay topics
+extern const char* MQTT_TOPIC_RELAY_CMD;   // subscribe: ON/OFF/TOGGLE/1/0
+extern const char* MQTT_TOPIC_RELAY_STATE; // publish retained: {"on":true|false}

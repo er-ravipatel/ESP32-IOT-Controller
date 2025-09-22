@@ -18,6 +18,7 @@
 #include <DNSServer.h>
 #include "wifi_config.h"
 #include "hx711_service.h"
+#include "relay.h"
 
 namespace {
   WebServer server(80);
@@ -210,6 +211,22 @@ namespace Portal {
       bool next = !on;
       writeLed(next);
       server.send(200, "application/json", String("{\"on\":") + (next?"true":"false") + "}");
+    });
+    // Relay control endpoints
+    server.on("/relay/state", HTTP_GET, []{
+      server.send(200, "application/json", String("{\"on\":") + (Relay::get()?"true":"false") + "}");
+    });
+    server.on("/relay/on", HTTP_GET, []{
+      Relay::set(true);
+      server.send(200, "application/json", "{\"on\":true}");
+    });
+    server.on("/relay/off", HTTP_GET, []{
+      Relay::set(false);
+      server.send(200, "application/json", "{\"on\":false}");
+    });
+    server.on("/relay/toggle", HTTP_GET, []{
+      Relay::toggle();
+      server.send(200, "application/json", String("{\"on\":") + (Relay::get()?"true":"false") + "}");
     });
     server.onNotFound([]{
       String path = server.uri();

@@ -190,6 +190,18 @@
         <a href="#" id="hxTare" class="btn secondary">Tare (Zero)</a>
         <a href="#" id="hxScale" class="btn secondary">Set Scale</a>
       </div>
+
+      <hr style="border:none;border-top:1px solid rgba(127,127,127,.25);margin:16px 0">
+
+      <h2 style="margin:0 0 6px;font-size:18px">Relay</h2>
+      <div class="row row-gap-12">
+        <label class="switch" id="relaySwitch"><input id="relayToggle" type="checkbox"><span class="knob"></span></label>
+        <span class="muted">Toggle to switch the relay</span>
+      </div>
+      <div class="actions">
+        <a href="#" id="relayOn" class="btn">Relay On</a>
+        <a href="#" id="relayOff" class="btn secondary">Relay Off</a>
+      </div>
     </main>
 
     <!-- Script -->
@@ -216,6 +228,7 @@
       // App state
       let state = { on: false };
       let hx = { value: NaN, raw: 0, age: -1, scale: 1 };
+      let relay = { on: false };
 
       // Render UI from state
       function render() {
@@ -345,6 +358,33 @@
       hxTareBtn.addEventListener('click', hxTareNow);
       hxScaleBtn.addEventListener('click', hxSetScale);
       setInterval(hxRefresh, 500);
+
+      // --- Relay helpers ---
+      const relayToggle = document.getElementById('relayToggle');
+      const relaySwitch = document.getElementById('relaySwitch');
+      const relayOnBtn  = document.getElementById('relayOn');
+      const relayOffBtn = document.getElementById('relayOff');
+
+      function relayRender(){
+        relayToggle.checked = !!relay.on;
+        relaySwitch.classList.toggle('on', !!relay.on);
+        relayOnBtn.classList.toggle('disabled',  !!relay.on);
+        relayOffBtn.classList.toggle('disabled', !relay.on);
+      }
+      async function relayRefresh(){
+        try{
+          const j = await call('/relay/state');
+          if (j && typeof j.on === 'boolean') { relay.on = j.on; relayRender(); }
+        }catch(_){ }
+      }
+      async function relaySet(on){
+        try{ await call(on ? '/relay/on' : '/relay/off'); relay.on = !!on; relayRender(); }
+        catch(_){ /* ignore */ }
+      }
+      relayToggle.addEventListener('change', ()=> relaySet(relayToggle.checked));
+      relayOnBtn.addEventListener('click', e=>{ e.preventDefault(); relaySet(true);  });
+      relayOffBtn.addEventListener('click',e=>{ e.preventDefault(); relaySet(false); });
+      setInterval(relayRefresh, 2000);
     </script>
   </body>
   </html>

@@ -5,6 +5,7 @@
 #include "mqtt_config.h"
 #include "certs.h"
 #include <time.h>
+#include "relay.h"
 
 #ifndef LED_BUILTIN
 #define LED_BUILTIN 2
@@ -21,6 +22,7 @@ namespace {
   uint32_t g_lastTry = 0;          // last attempted connect time
   uint32_t g_nextTryDelay = 5000;  // backoff, starts at 5s up to 60s
   uint32_t g_lastStatePub = 0;     // last state publish time
+  uint32_t g_lastRelayStatePub = 0;
   uint32_t g_wifiUpSince = 0;      // when Wi‑Fi became connected
   bool g_timeReady = false;        // SNTP time set
   uint32_t g_timeStart = 0;        // when SNTP was started
@@ -42,6 +44,18 @@ namespace {
     g_lastStatePub = now;
   }
 
+  void publishRelayState(bool force=false) {
+    if (!g_mqtt.connected()) return;
+    uint32_t now = millis();
+    if (!force && (now - g_lastRelayStatePub) < 30000) return; // heartbeat 30s
+    String payload = String("{\"on\":") + (Relay::get()?"true":"false") + "}";
+    bool ok = g_mqtt.publish(MQTT_TOPIC_RELAY_STATE, payload.c_str(), true);
+    Serial.print(F("MQTT: publish ")); Serial.print(MQTT_TOPIC_RELAY_STATE);
+    Serial.print(F(" payload=")); Serial.print(payload);
+    Serial.print(F(" result=")); Serial.println(ok ? F("OK") : F("FAIL"));
+    g_lastRelayStatePub = now;
+  }
+
   void onMsg(char* topic, byte* payload, unsigned int len) {
     String t = String(topic);
     String msg; msg.reserve(len);
@@ -55,6 +69,12 @@ namespace {
       else if (u == "TOGGLE" || u == "T") { writeLed(!isLedOn()); Serial.println(F("LED: TOGGLE (via MQTT)")); }
       else { Serial.println(F("MQTT: unknown LED command")); }
       publishState(true);
+    } else if (t == MQTT_TOPIC_RELAY_CMD) {
+      if (u == "ON" || u == "1") { Relay::set(true);  Serial.println(F("Relay: ON (via MQTT)")); }
+      else if (u == "OFF" || u == "0") { Relay::set(false); Serial.println(F("Relay: OFF (via MQTT)")); }
+      else if (u == "TOGGLE" || u == "T") { Relay::toggle(); Serial.println(F("Relay: TOGGLE (via MQTT)")); }
+      else { Serial.println(F("MQTT: unknown RELAY command")); }
+      publishRelayState(true);
     }
   }
 
@@ -90,7 +110,10 @@ namespace {
       Serial.println(F("MQTT: connected"));
       g_mqtt.subscribe(MQTT_TOPIC_CMD);
       Serial.print(F("MQTT: subscribed to ")); Serial.println(MQTT_TOPIC_CMD);
+      g_mqtt.subscribe(MQTT_TOPIC_RELAY_CMD);
+      Serial.print(F("MQTT: subscribed to ")); Serial.println(MQTT_TOPIC_RELAY_CMD);
       publishState(true);
+      publishRelayState(true);
       g_nextTryDelay = 5000; // reset backoff on success
     } else {
       int rc = g_mqtt.state();
