@@ -20,6 +20,7 @@
 #include "hx711_service.h"
 #include "relay.h"
 #include "relays.h"
+#include "keypad_service.h"
 
 namespace {
   WebServer server(80);
@@ -179,6 +180,27 @@ namespace Portal {
     server.on("/hx/config", HTTP_GET, []{
       String json = String("{\"scale\":") + String(HxService::currentScale(),6) +
                     ",\"offset\":" + String(HxService::currentOffset()) + "}";
+      server.send(200, "application/json", json);
+    });
+    // Last keypad key endpoint
+    server.on("/key", HTTP_GET, []{
+      char k=0; uint32_t age=UINT32_MAX; bool ok = KeypadService::getLast(k, age);
+      String json = String("{\"ok\":") + (ok?"true":"false") + ",\"key\":\"" + (ok?String(k):String("")) + "\",\"age_ms\":" + String(ok?age:UINT32_MAX) + "}";
+      server.send(200, "application/json", json);
+    });
+    // Full keypad buffer endpoint
+    server.on("/keys", HTTP_GET, []{
+      String s; uint32_t age=UINT32_MAX; bool ok = KeypadService::getInput(s, age);
+      // Prepare a 17-char tail view for UI
+      const int VIEW = 17;
+      String view = (s.length() > VIEW) ? s.substring(s.length()-VIEW) : s;
+      uint32_t seq = KeypadService::sequence();
+      String json = String("{\"ok\":") + (ok?"true":"false") +
+                    ",\"data\":\"" + s +
+                    "\",\"view\":\"" + view +
+                    "\",\"len\":" + String((int)s.length()) +
+                    ",\"seq\":" + String(seq) +
+                    ",\"age_ms\":" + String(age) + "}";
       server.send(200, "application/json", json);
     });
     // Device status: Wi‑Fi + Internet reachability

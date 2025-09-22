@@ -20,6 +20,7 @@
 #include "hx711_service.h"
 #include "relay.h"
 #include "relays.h"
+#include "keypad_service.h"
 
 #ifndef LED_BUILTIN
 #define LED_BUILTIN 2  // Fallback for common ESP32 dev boards
@@ -91,6 +92,8 @@ void setup() {
       Relay::begin();
     }
   }
+  // Start keypad (optional; safe if not connected)
+  KeypadService::begin();
 
   // Try saved credentials; if none or connect fails, keep the portal up
   String ssid, pass;
@@ -173,6 +176,8 @@ void loop() {
   MqttMin::loop();
   // HX711 sampler and publisher
   HxService::loop();
+  // Keypad scanner
+  KeypadService::loop();
 
   // Small idle delay to keep the loop yielding
   delay(10);

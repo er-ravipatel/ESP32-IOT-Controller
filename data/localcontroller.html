@@ -193,14 +193,15 @@
 
       <hr style="border:none;border-top:1px solid rgba(127,127,127,.25);margin:16px 0">
 
-      <h2 style="margin:0 0 6px;font-size:18px">Relay</h2>
-      <div class="row row-gap-12">
-        <label class="switch" id="relaySwitch"><input id="relayToggle" type="checkbox"><span class="knob"></span></label>
-        <span class="muted">Toggle to switch the relay</span>
-      </div>
-      <div class="actions">
-        <a href="#" id="relayOn" class="btn">Relay On</a>
-        <a href="#" id="relayOff" class="btn secondary">Relay Off</a>
+      <h2 style="margin:0 0 6px;font-size:18px">Relays</h2>
+      <div id="relaysBox" class="row" style="flex-wrap:wrap; gap:8px"></div>
+
+      <hr style="border:none;border-top:1px solid rgba(127,127,127,.25);margin:16px 0">
+
+      <h2 style="margin:0 0 6px;font-size:18px">Keypad</h2>
+      <div class="row" style="gap:10px">
+        <div class="status">Input:&nbsp;<span id="keyStr">(empty)</span></div><div id="keyLog" class="muted" style="white-space:pre-wrap;max-height:8em;overflow:auto;"></div>
+        <span class="muted">age:&nbsp;<span id="keyAge">--</span> ms</span>
       </div>
     </main>
 
@@ -359,32 +360,99 @@
       hxScaleBtn.addEventListener('click', hxSetScale);
       setInterval(hxRefresh, 500);
 
-      // --- Relay helpers ---
-      const relayToggle = document.getElementById('relayToggle');
-      const relaySwitch = document.getElementById('relaySwitch');
-      const relayOnBtn  = document.getElementById('relayOn');
-      const relayOffBtn = document.getElementById('relayOff');
+      // --- Relay helpers (multi-channel) ---
+      const keyStr = document.getElementById('keyStr');
+      const keyAge = document.getElementById('keyAge');
+      const relaysBox = document.getElementById('relaysBox');
+      let relayMode = 'per'; // 'per' uses /relay/<i>/..., 'legacy' uses /relay/...
+      let relayCount = 0;
 
-      function relayRender(){
-        relayToggle.checked = !!relay.on;
-        relaySwitch.classList.toggle('on', !!relay.on);
-        relayOnBtn.classList.toggle('disabled',  !!relay.on);
-        relayOffBtn.classList.toggle('disabled', !relay.on);
+      function relayStatePath(i){ return relayMode === 'per' ? `/relay/${i}/state` : '/relay/state'; }
+      function relayOnPath(i){ return relayMode === 'per' ? `/relay/${i}/on` : '/relay/on'; }
+      function relayOffPath(i){ return relayMode === 'per' ? `/relay/${i}/off` : '/relay/off'; }
+
+      async function relayDetect(){
+        // Probe per-channel endpoint
+        try {
+          const j = await call('/relay/1/state');
+          if (j && typeof j.on === 'boolean') {
+            relayMode = 'per';
+            // Determine count up to 4
+            relayCount = 0;
+            for (let i=1;i<=4;i++){
+              try { const ji = await call(`/relay/${i}/state`); if (ji && typeof ji.on === 'boolean') relayCount = i; else break; }
+              catch(_){ break; }
+            }
+            if (relayCount === 0) relayCount = 1;
+          } else {
+            relayMode = 'legacy'; relayCount = 1;
+          }
+        } catch(_) { relayMode = 'legacy'; relayCount = 1; }
+        renderRelays();
+        relayRefreshAll();
+        setInterval(relayRefreshAll, 2000);
       }
-      async function relayRefresh(){
+
+      function renderRelays(){
+        relaysBox.innerHTML = '';
+        for (let i=1;i<=relayCount;i++){
+          const row = document.createElement('div');
+          row.className = 'row'; row.style.gap = '8px';
+          row.innerHTML = `
+            <strong>Relay ${i}</strong>
+            <a href="#" id="r${i}On" class="btn">On</a>
+            <a href="#" id="r${i}Off" class="btn secondary">Off</a>
+            <span id="r${i}State" class="muted">(unknown)</span>`;
+          relaysBox.appendChild(row);
+          document.getElementById(`r${i}On`).onclick = async (e)=>{ e.preventDefault(); try{ await call(relayOnPath(i)); }catch(_){ } relayRefresh(i); };
+          document.getElementById(`r${i}Off`).onclick= async (e)=>{ e.preventDefault(); try{ await call(relayOffPath(i));}catch(_){ } relayRefresh(i); };
+        }
+      }
+
+      async function relayRefresh(i){
         try{
-          const j = await call('/relay/state');
-          if (j && typeof j.on === 'boolean') { relay.on = j.on; relayRender(); }
+          const j = await call(relayStatePath(i));
+          const el = document.getElementById(`r${i}State`);
+          if (el && j && typeof j.on === 'boolean') { el.textContent = j.on?'ON':'OFF'; el.className = j.on?'ok':'warn'; }
         }catch(_){ }
       }
-      async function relaySet(on){
-        try{ await call(on ? '/relay/on' : '/relay/off'); relay.on = !!on; relayRender(); }
-        catch(_){ /* ignore */ }
+      async function relayRefreshAll(){ for (let i=1;i<=relayCount;i++) relayRefresh(i); }
+
+      // Detect relays on load
+      relayDetect();
+
+      // --- Keypad helpers ---
+
+      // Keep a simple log of completed lines based on seq changes
+      let keySeq = 0; let lastData = '';
+      async function keyRefresh(){
+        try {
+          const j = await call('/keys');
+          if (j && j.ok){
+            // Detect newline event (##) by sequence counter change
+            if (typeof j.seq === 'number' && j.seq !== keySeq) {
+              const log = document.getElementById('keyLog');
+              if (log && lastData && lastData.length) {
+                log.textContent += (log.textContent.length? '\n' : '') + lastData;
+                log.scrollTop = log.scrollHeight;
+              }
+              keySeq = j.seq;
+            }
+            lastData = j.data || '';
+            const view = (j.view && j.view.length) ? j.view : (j.data? j.data.slice(-17) : '');
+            keyStr.textContent = view || '(empty)';
+            keyAge.textContent = (typeof j.age_ms === 'number') ? String(j.age_ms) : '--';
+          }
+        } catch(_) { /* ignore */ }
       }
-      relayToggle.addEventListener('change', ()=> relaySet(relayToggle.checked));
-      relayOnBtn.addEventListener('click', e=>{ e.preventDefault(); relaySet(true);  });
-      relayOffBtn.addEventListener('click',e=>{ e.preventDefault(); relaySet(false); });
-      setInterval(relayRefresh, 2000);
+      setInterval(keyRefresh, 200);
+
+
     </script>
   </body>
   </html>
+
+
+
+
+
