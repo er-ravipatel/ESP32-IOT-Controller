@@ -3,40 +3,116 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>ESP32 Remote (LED · Relay · HX711)</title>
+    <title>ESP32 Remote (Standalone)</title>
     <style>
-      :root{ --muted:#6b7280; --ok:#16a34a; --warn:#d97706; --err:#dc2626; }
-      body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,Arial,sans-serif;margin:2rem;line-height:1.5}
-      .card{max-width:900px;margin:0 auto;border:1px solid #e5e7eb;border-radius:12px;padding:16px}
-      .row{display:flex;gap:12px;align-items:center;margin:.5rem 0}
+      :root {
+        --bg:#0d1117; --panel:#161b22; --text:#c9d1d9; --muted:#8b949e; --primary:#0a84ff;
+        --ok:#22c55e; --warn:#f59e0b; --err:#ef4444; --border:#2a2f36; --shadow:0 14px 40px rgba(0,0,0,.28);
+      }
+      @media (prefers-color-scheme: light){:root{--bg:#f6f8fa;--panel:#fff;--text:#24292f;--muted:#57606a;--border:#d0d7de;--shadow:0 12px 30px rgba(140,149,159,.25)}}
+      *{box-sizing:border-box}
+      body{margin:0;background:linear-gradient(180deg,var(--bg),rgba(0,0,0,.08));color:var(--text);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,Arial,sans-serif}
+      main.card{max-width:980px;margin:24px auto;background:var(--panel);border-radius:16px;box-shadow:var(--shadow);padding:18px;border:1px solid var(--border)}
+      h2{margin:0 0 6px 0}
       .muted{color:var(--muted)}
       .ok{color:var(--ok)} .warn{color:var(--warn)} .err{color:var(--err)}
-      .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-      .section{border:1px solid #e5e7eb;border-radius:12px;padding:12px}
-      .title{margin:.2rem 0 0 0}
-      .actions{display:flex;gap:.5rem;margin:.5rem 0}
-      .btn{padding:.5rem .8rem;border:1px solid #d1d5db;border-radius:8px;cursor:pointer;background:#0a84ff;color:#fff}
+      .row{display:flex;gap:10px;align-items:center}
+      .section{border:1px solid var(--border);border-radius:12px;padding:12px}
+      .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+      .actions{display:flex;gap:.5rem;flex-wrap:wrap}
+      .btn{padding:.5rem .8rem;border:1px solid var(--border);border-radius:8px;background:var(--primary);color:#fff;cursor:pointer}
       .btn.secondary{background:#6b7280}
-      .btn:disabled{opacity:.6;cursor:default}
-      .value{font-size:2.0rem;font-weight:800}
-      code{background:#f3f4f6;border:1px solid #e5e7eb;border-radius:6px;padding:.15rem .35rem}
-      .copy{padding:.25rem .5rem;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer}
+      .btn.disabled,.btn:disabled{opacity:.6;pointer-events:none}
+      .value{font-size:2rem;font-weight:800}
+      code{background:transparent;border:1px solid var(--border);border-radius:6px;padding:.15rem .35rem}
+      input{width:100%;padding:.55rem .6rem;border:1px solid var(--border);border-radius:10px;background:transparent;color:var(--text)}
+      label{display:block;font-weight:600;margin:.3rem 0 .25rem}
+      .settings{margin:10px 0;padding:10px;border:1px dashed var(--border);border-radius:12px}
+      .settings .grid{grid-template-columns:1fr 1fr 1fr}
+      @media (max-width:900px){.grid{grid-template-columns:1fr}.settings .grid{grid-template-columns:1fr}}
     </style>
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   </head>
   <body>
     <main class="card">
-      <h2>ESP32 Remote</h2>
-      <p class="muted">Control LED and Relay, and view HX711 readings over MQTT (secure WebSockets). Falls back to HTTP when MQTT is disconnected.</p>
+      <h2>ESP32 Remote (Standalone)</h2>
+      <p class="muted">Control LED and Relay, and view HX711 readings via MQTT over WSS. Optional HTTP fallback can target your device URL (requires CORS on the device).</p>
 
-      <h3>Connection</h3>
-      <div class="row">Broker: <code id="hostInfo"></code></div>
-      <div class="row">Status: <span id="conn" class="muted">Connecting…</span></div>
+      <div class="row" style="justify-content:space-between;margin:.5rem 0 1rem 0">
+        <div class="row" style="gap:16px">
+          <div>Broker: <code id="hostInfo">—</code></div>
+          <div>Status: <span id="conn" class="muted">Disconnected</span></div>
+        </div>
+        <div class="row" style="gap:8px">
+          <button id="btnConnect" class="btn">Connect</button>
+          <button id="btnDisconnect" class="btn secondary">Disconnect</button>
+          <button id="btnSettings" class="btn secondary">Settings</button>
+        </div>
+      </div>
+
+      <details id="settings" class="settings">
+        <summary><strong>Settings</strong> <span class="muted">(saved in this browser)</span></summary>
+        <div class="grid" style="margin-top:10px">
+          <div>
+            <label>MQTT Host</label>
+            <input id="s_host" placeholder="broker.example.com">
+          </div>
+          <div>
+            <label>Port</label>
+            <input id="s_port" type="number" min="1" max="65535" placeholder="8084">
+          </div>
+          <div>
+            <label>Path</label>
+            <input id="s_path" placeholder="/mqtt">
+          </div>
+          <div>
+            <label>Username (optional)</label>
+            <input id="s_user" placeholder="">
+          </div>
+          <div>
+            <label>Password (optional)</label>
+            <input id="s_pass" type="password" placeholder="">
+          </div>
+          <div>
+            <label>Client ID</label>
+            <input id="s_client" placeholder="web-xxxx">
+          </div>
+          <div>
+            <label>LED Cmd Topic</label>
+            <input id="s_ledCmd" placeholder="esp32/led/cmd">
+          </div>
+          <div>
+            <label>LED State Topic</label>
+            <input id="s_ledState" placeholder="esp32/led/state">
+          </div>
+          <div>
+            <label>Relay Cmd Topic</label>
+            <input id="s_relCmd" placeholder="esp32/relay/cmd">
+          </div>
+          <div>
+            <label>Relay State Topic</label>
+            <input id="s_relState" placeholder="esp32/relay/state">
+          </div>
+          <div>
+            <label>HX711 Topic</label>
+            <input id="s_hx" placeholder="esp32/hx711/weight">
+          </div>
+          <div>
+            <label>Device HTTP Base (optional)</label>
+            <input id="s_http" placeholder="http://esp32-xxxx.local">
+          </div>
+        </div>
+        <div class="row" style="justify-content:flex-end;margin-top:10px;gap:8px">
+          <button id="btnSave" class="btn">Save</button>
+          <button id="btnTestHttp" class="btn secondary">Test HTTP</button>
+        </div>
+        <p id="settingsNote" class="muted" style="margin:.5rem 0 0">Tip: When hosting this file anywhere, MQTT works cross‑origin. HTTP fallback requires the device to send CORS headers.</p>
+      </details>
 
       <h3>Controls & Live Status</h3>
       <div class="grid">
         <div class="section">
-          <h4 class="title">LED</h4>
+          <h4>LED</h4>
           <div>State: <strong id="ledLive" class="muted">…</strong></div>
           <div class="actions">
             <button id="ledOn" class="btn">Turn ON</button>
@@ -46,7 +122,7 @@
           <div id="ledInfo" class="muted"></div>
         </div>
         <div class="section">
-          <h4 class="title">Relay</h4>
+          <h4>Relay</h4>
           <div>State: <strong id="relLive" class="muted">…</strong></div>
           <div class="actions">
             <button id="relOn" class="btn">Relay ON</button>
@@ -55,7 +131,7 @@
           <div id="relInfo" class="muted"></div>
         </div>
         <div class="section" style="grid-column:1 / -1">
-          <h4 class="title">HX711</h4>
+          <h4>HX711</h4>
           <div class="row">
             <div>Latest:</div>
             <div id="hxVal" class="value">--</div>
@@ -64,12 +140,11 @@
           <div class="row muted" style="font-size:.95rem">Raw: <span id="hxRaw">--</span> · Age: <span id="hxAge">--</span></div>
         </div>
       </div>
-
     </main>
 
     <script>
-      // Centralized broker + topics config (matches firmware defaults)
-      const CFG = {
+      const LS_KEY = 'esp32-remote-settings';
+      const DEFAULTS = {
         host: 'y2d012bd.ala.eu-central-1.emqxsl.com',
         port: 8084,
         path: '/mqtt',
@@ -81,145 +156,163 @@
         relCmd: 'esp32/relay/cmd',
         relState: 'esp32/relay/state',
         hxTopic: 'esp32/hx711/weight',
+        httpBase: ''
       };
 
-      // Wire broker info + copy buttons
-      document.getElementById('hostInfo').textContent = `${CFG.host}:${CFG.port}${CFG.path}`;
-      document.querySelectorAll('.copy').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const id = btn.getAttribute('data-copy');
-          const text = document.getElementById(id).textContent;
-          navigator.clipboard.writeText(text);
-          const old = btn.textContent; btn.textContent = 'Copied'; setTimeout(()=> btn.textContent=old, 900);
-        });
-      });
+      function loadSettings(){
+        try { const raw = localStorage.getItem(LS_KEY); if (!raw) return {...DEFAULTS};
+              const j = JSON.parse(raw); return {...DEFAULTS, ...j}; } catch(_){ return {...DEFAULTS}; }
+      }
+      function saveSettings(cfg){ localStorage.setItem(LS_KEY, JSON.stringify(cfg)); }
+      function $(id){ return document.getElementById(id); }
 
-      // UI elements
-      const connEl = document.getElementById('conn');
-      const ledLive = document.getElementById('ledLive');
-      const relLive = document.getElementById('relLive');
-      const ledInfo = document.getElementById('ledInfo');
-      const relInfo = document.getElementById('relInfo');
-      const hxVal = document.getElementById('hxVal');
-      const hxUnit = document.getElementById('hxUnit');
-      const hxRaw = document.getElementById('hxRaw');
-      const hxAge = document.getElementById('hxAge');
+      // UI refs
+      const connEl = $('conn');
+      const hostInfo = $('hostInfo');
+      const settingsEl = $('settings');
+      const s_host=$('s_host'), s_port=$('s_port'), s_path=$('s_path'), s_user=$('s_user'), s_pass=$('s_pass'), s_client=$('s_client');
+      const s_ledCmd=$('s_ledCmd'), s_ledState=$('s_ledState'), s_relCmd=$('s_relCmd'), s_relState=$('s_relState'), s_hx=$('s_hx');
+      const s_http=$('s_http');
 
-      // HTTP helpers (fallback when MQTT disconnected)
+      const ledLive=$('ledLive'), relLive=$('relLive'), ledInfo=$('ledInfo'), relInfo=$('relInfo');
+      const hxVal=$('hxVal'), hxUnit=$('hxUnit'), hxRaw=$('hxRaw'), hxAge=$('hxAge');
+      const ledOnBtn=$('ledOn'), ledOffBtn=$('ledOff'), ledTogBtn=$('ledTog');
+      const relOnBtn=$('relOn'), relOffBtn=$('relOff');
+
+      // Shared state
+      let CFG = loadSettings();
+      let client = null;
+      let mqttConnected = false;
+      let lastHxAt = 0;
+
+      function applySettingsToUI(){
+        s_host.value = CFG.host; s_port.value = CFG.port; s_path.value = CFG.path;
+        s_user.value = CFG.username || ''; s_pass.value = CFG.password || '';
+        s_client.value = CFG.clientId; s_ledCmd.value=CFG.ledCmd; s_ledState.value=CFG.ledState;
+        s_relCmd.value=CFG.relCmd; s_relState.value=CFG.relState; s_hx.value=CFG.hxTopic; s_http.value=CFG.httpBase;
+        hostInfo.textContent = `${CFG.host}:${CFG.port}${CFG.path}`;
+      }
+      function readSettingsFromUI(){
+        CFG = {
+          host: s_host.value.trim() || DEFAULTS.host,
+          port: Number(s_port.value)||DEFAULTS.port,
+          path: s_path.value.trim() || DEFAULTS.path,
+          username: s_user.value.trim(),
+          password: s_pass.value,
+          clientId: s_client.value.trim() || ('web-'+Math.random().toString(16).slice(2,8)),
+          ledCmd: s_ledCmd.value.trim() || DEFAULTS.ledCmd,
+          ledState: s_ledState.value.trim() || DEFAULTS.ledState,
+          relCmd: s_relCmd.value.trim() || DEFAULTS.relCmd,
+          relState: s_relState.value.trim() || DEFAULTS.relState,
+          hxTopic: s_hx.value.trim() || DEFAULTS.hxTopic,
+          httpBase: s_http.value.trim()
+        };
+      }
+
+      // Fill settings on load
+      applySettingsToUI();
+      $('btnSettings').onclick = ()=> settingsEl.open = !settingsEl.open;
+      $('btnSave').onclick = ()=>{ readSettingsFromUI(); saveSettings(CFG); applySettingsToUI(); };
+
+      // Optional HTTP helpers (requires device CORS)
       async function httpJSON(path, timeoutMs=2500){
+        if (!CFG.httpBase) return null;
+        const url = CFG.httpBase.replace(/\/$/, '') + path;
         const ctrl = new AbortController(); const t = setTimeout(()=>ctrl.abort(), timeoutMs);
-        try { const r = await fetch(path, {cache:'no-store', signal: ctrl.signal}); if(!r.ok) throw 0; return r.json(); }
-        catch(_) { return null; } finally { clearTimeout(t); }
-      }
-      async function refreshHTTP(){
-        if (mqttConnected) return; // only when MQTT down
         try {
-          const led = await httpJSON('/state');
-          if (led && typeof led.on !== 'undefined') { ledLive.textContent = led.on?'ON':'OFF'; ledLive.className = led.on?'ok':'warn'; }
-          else { ledLive.textContent = 'unknown'; ledLive.className = 'err'; }
-        } catch(_){}
-        try {
-          const rel = await httpJSON('/relay/state');
-          if (rel && typeof rel.on !== 'undefined') { relLive.textContent = rel.on?'ON':'OFF'; relLive.className = rel.on?'ok':'warn'; }
-          else { relLive.textContent = 'unknown'; relLive.className = 'err'; }
-        } catch(_){}
-        setTimeout(refreshHTTP, 4000);
+          const r = await fetch(url, {cache:'no-store', signal: ctrl.signal, mode:'cors'});
+          if(!r.ok) throw 0; const ct = r.headers.get('content-type')||'';
+          return ct.includes('application/json') ? r.json() : null;
+        } catch(_){ return null; } finally { clearTimeout(t); }
       }
-      refreshHTTP();
+      $('btnTestHttp').onclick = async ()=>{
+        const j = await httpJSON('/status', 3000);
+        $('settingsNote').textContent = j ? `HTTP OK: IP ${j.ip||'?'} SSID ${j.ssid||''}` : 'HTTP test failed (CORS or device unreachable)';
+      };
 
-      // Buttons
-      const ledOnBtn = document.getElementById('ledOn');
-      const ledOffBtn= document.getElementById('ledOff');
-      const ledTogBtn= document.getElementById('ledTog');
-      const relOnBtn = document.getElementById('relOn');
-      const relOffBtn= document.getElementById('relOff');
-
+      // Actions
       async function doLed(cmd){
         ledInfo.textContent = 'Working…';
         try{
-          if (mqttConnected && client) client.publish(CFG.ledCmd, cmd);
-          else await httpJSON(cmd==='ON'?'/on':cmd==='OFF'?'/off':'/toggle');
-        }catch(_){}
-        ledInfo.textContent = '';
+          if (mqttConnected && client) {
+            ledOnBtn.classList.toggle('disabled', cmd==='ON');
+            ledOffBtn.classList.toggle('disabled', cmd==='OFF');
+            client.publish(CFG.ledCmd, cmd);
+          } else {
+            if (cmd==='ON') await httpJSON('/on'); else if (cmd==='OFF') await httpJSON('/off'); else await httpJSON('/toggle');
+          }
+        } finally { ledInfo.textContent = ''; }
       }
       async function doRelay(on){
         relInfo.textContent = 'Working…';
         try{
-          if (mqttConnected && client) client.publish(CFG.relCmd, on?'ON':'OFF');
-          else await httpJSON(on?'/relay/on':'/relay/off');
-        }catch(_){}
-        relInfo.textContent = '';
+          if (mqttConnected && client) {
+            relOnBtn.classList.toggle('disabled', on===true);
+            relOffBtn.classList.toggle('disabled', on===false);
+            client.publish(CFG.relCmd, on?'ON':'OFF');
+          } else {
+            await httpJSON(on?'/relay/on':'/relay/off');
+          }
+        } finally { relInfo.textContent = ''; }
       }
-      ledOnBtn.onclick = ()=> doLed('ON');
-      ledOffBtn.onclick= ()=> doLed('OFF');
-      ledTogBtn.onclick= ()=> doLed('TOGGLE');
-      relOnBtn.onclick = ()=> doRelay(true);
-      relOffBtn.onclick= ()=> doRelay(false);
+      $('ledOn').onclick = ()=> doLed('ON');
+      $('ledOff').onclick= ()=> doLed('OFF');
+      $('ledTog').onclick= ()=> doLed('TOGGLE');
+      $('relOn').onclick = ()=> doRelay(true);
+      $('relOff').onclick= ()=> doRelay(false);
 
-      // MQTT connect & subscriptions
-      let client = null;
-      let mqttConnected = false;
-      let lastLedStateAt = 0;
-      let lastRelStateAt = 0;
-      let lastHxAt = 0;
-
-      (function connectMqtt(){
+      // MQTT connect/disconnect
+      function connect(){
+        if (client) { try { client.end(true); } catch(_){} client = null; }
         const url = `wss://${CFG.host}:${CFG.port}${CFG.path}`;
         const options = {
           clientId: CFG.clientId,
           username: CFG.username || undefined,
           password: CFG.password || undefined,
-          reconnectPeriod: 4000,        // back off a bit to avoid thrash
+          reconnectPeriod: 4000,
           clean: true,
-          connectTimeout: 10000,        // allow slower TLS handshakes
-          protocolVersion: 4,           // MQTT v3.1.1 (widely supported)
-          keepalive: 30,                // seconds
+          connectTimeout: 10000,
+          protocolVersion: 4,
+          keepalive: 30,
           resubscribe: true,
         };
-        connEl.textContent = 'Connecting…';
+        connEl.textContent = 'Connecting…'; connEl.className = 'warn';
         client = mqtt.connect(url, options);
         client.on('connect', ()=>{
-          mqttConnected = true;
-          connEl.textContent = 'Connected'; connEl.className = 'ok';
+          mqttConnected = true; connEl.textContent = 'Connected'; connEl.className = 'ok';
           client.subscribe([CFG.ledState, CFG.relState, CFG.hxTopic]);
-          lastLedStateAt = lastRelStateAt = lastHxAt = 0;
         });
         client.on('reconnect', ()=>{ connEl.textContent = 'Reconnecting…'; connEl.className = 'warn'; });
         client.on('offline',  ()=>{ connEl.textContent = 'Offline'; connEl.className = 'warn'; });
         client.on('close',    ()=>{ mqttConnected = false; connEl.textContent = 'Disconnected'; connEl.className = 'err'; });
         client.on('end',      ()=>{ mqttConnected = false; connEl.textContent = 'Ended'; connEl.className = 'err'; });
         client.on('error', (e)=>{ mqttConnected = false; connEl.textContent = 'Error'; connEl.className = 'err'; console.error('MQTT error:', e); });
-        // In browser, inspect WebSocket close codes/reasons when available
-        try {
-          if (client.stream && client.stream.addEventListener) {
-            client.stream.addEventListener('close', ev => {
-              console.warn('WS close', ev.code, ev.reason || '');
-            });
-          }
-        } catch(_){}
         client.on('message', (topic, payload)=>{
           try{
             const s = String(payload);
             if (topic === CFG.ledState) {
-              const j = JSON.parse(s);
-              const on = !!j.on; ledLive.textContent = on?'ON':'OFF'; ledLive.className = on?'ok':'warn'; lastLedStateAt = Date.now();
+              const j = JSON.parse(s); const on = !!j.on; $('ledLive').textContent = on?'ON':'OFF'; $('ledLive').className = on?'ok':'warn';
             } else if (topic === CFG.relState) {
-              const j = JSON.parse(s);
-              const on = !!j.on; relLive.textContent = on?'ON':'OFF'; relLive.className = on?'ok':'warn'; lastRelStateAt = Date.now();
+              const j = JSON.parse(s); const on = !!j.on; $('relLive').textContent = on?'ON':'OFF'; $('relLive').className = on?'ok':'warn';
             } else if (topic === CFG.hxTopic) {
               const j = JSON.parse(s);
-              if (typeof j.value === 'number') hxVal.textContent = j.value.toFixed(3);
-              if (typeof j.unit === 'string') hxUnit.textContent = j.unit;
-              if (typeof j.raw  !== 'undefined') hxRaw.textContent = String(j.raw);
-              if (typeof j.age_ms !== 'undefined') { hxAge.textContent = String(j.age_ms) + ' ms'; lastHxAt = Date.now(); }
-              else { lastHxAt = Date.now(); hxAge.textContent = '0 ms'; }
+              if (typeof j.value === 'number') $('hxVal').textContent = j.value.toFixed(3);
+              if (typeof j.unit === 'string') $('hxUnit').textContent = j.unit;
+              if (typeof j.raw  !== 'undefined') $('hxRaw').textContent = String(j.raw);
+              if (typeof j.age_ms !== 'undefined') { $('hxAge').textContent = String(j.age_ms) + ' ms'; lastHxAt = Date.now(); }
+              else { lastHxAt = Date.now(); $('hxAge').textContent = '0 ms'; }
             }
-          } catch(_){ /* ignore parse errors */ }
+          } catch(_){ }
         });
-      })();
+      }
+      function disconnect(){ if (client){ try{ client.end(true); }catch(_){} } mqttConnected=false; connEl.textContent='Disconnected'; connEl.className=''; }
+      $('btnConnect').onclick = ()=>{ readSettingsFromUI(); saveSettings(CFG); applySettingsToUI(); connect(); };
+      $('btnDisconnect').onclick = ()=> disconnect();
 
-      // Keep "Age" up to date for HX
-      setInterval(()=>{ if (lastHxAt) hxAge.textContent = (Date.now()-lastHxAt) + ' ms'; }, 500);
+      // Init
+      applySettingsToUI();
+      setInterval(()=>{ if (lastHxAt) $('hxAge').textContent = (Date.now()-lastHxAt) + ' ms'; }, 500);
     </script>
   </body>
   </html>
+
