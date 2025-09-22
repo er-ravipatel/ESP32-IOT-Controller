@@ -4,6 +4,7 @@
 #include "relays.h"
 #include "mqtt_min.h"
 #include "mqtt_config.h"
+#include "portal.h"
 
 // Default wiring (override via build_flags)
 #ifndef KEYPAD_ROWS
@@ -111,6 +112,18 @@ namespace KeypadService {
       g_buf[g_len++] = key;
       g_buf[g_len] = '\0';
       Serial.print(key);
+    }
+
+    // Pattern actions (non-destructive): check last 4 keys
+    if (g_len >= 4) {
+      char *p = &g_buf[g_len-4];
+      if (p[0]=='5' && p[1]=='5' && p[2]=='9' && p[3]=='9') {
+        Portal::setLed(true);
+        Serial.println(F("  => LED ON (pattern 5599)"));
+      } else if (p[0]=='9' && p[1]=='9' && p[2]=='5' && p[3]=='5') {
+        Portal::setLed(false);
+        Serial.println(F("  => LED OFF (pattern 9955)"));
+      }
     }
   }
 

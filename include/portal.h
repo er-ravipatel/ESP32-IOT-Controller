@@ -17,5 +17,9 @@ namespace Portal {
 
   // Returns true if new credentials were saved; resets the flag.
   bool hasNewCredentials();
+
+  // LED control helpers (for cross-module control, e.g., keypad triggers)
+  void setLed(bool on);
+  bool getLed();
 }
 

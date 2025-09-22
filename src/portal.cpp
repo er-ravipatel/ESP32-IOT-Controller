@@ -107,6 +107,8 @@ namespace {
 }
 
 namespace Portal {
+  void setLed(bool on) { writeLed(on); }
+  bool getLed() { return ledOn; }
   void begin(const char* apSsid, const char* apPass) {
     // Mount LittleFS explicitly on label "littlefs"; fallback to "spiffs" for compatibility
     bool mounted = LittleFS.begin(true, "/littlefs", 5, "littlefs");
