@@ -39,11 +39,6 @@
         <li>Publish <code>TOGGLE</code> or <code>T</code> to the command topic → LED toggles</li>
       </ul>
 
-      <h3>Examples</h3>
-      <pre class="muted">mosquitto_pub -h &lt;host&gt; -p &lt;port&gt; -t esp32/led/cmd -m ON
-mosquitto_pub -h &lt;host&gt; -p &lt;port&gt; -t esp32/led/cmd -m OFF
-mosquitto_sub -h &lt;host&gt; -p &lt;port&gt; -t esp32/led/state</pre>
-
       <h3>Live Status</h3>
       <p>Device: <span id="devStatus" class="muted">Checking…</span></p>
       <p>LED State: <span id="led" class="muted">...</span></p>

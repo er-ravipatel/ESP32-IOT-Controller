@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Remote LED Control</title>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <style>
+    :root{--bg:#0b0f14;--card:#121821;--text:#e7eef7;--muted:#97a4b3;--primary:#0F3376;--ok:#12b886;--bad:#fa5252;--ring:rgba(15,51,118,.35)}
+    @media (prefers-color-scheme: light){:root{--bg:#f6f8fb;--card:#fff;--text:#111;--muted:#4b5563;--ring:rgba(15,51,118,.15)}}
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100vh;display:grid;place-items:center;background:
+      radial-gradient(1250px 600px at 10% -10%, rgba(15,51,118,.08), transparent),
+      radial-gradient(1200px 600px at 100% 0%, rgba(18,184,134,.08), transparent),
+      var(--bg);color:var(--text);font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;padding:24px}
+    .card{width:min(760px,94vw);background:var(--card);border-radius:20px;box-shadow:0 10px 30px rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.06);padding:22px clamp(18px,3vw,28px) 24px}
+    .row{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+    .spacer{flex:1}
+    h1{margin:0 0 2px;font-size:clamp(22px,2.4vw,28px);letter-spacing:.2px;color:var(--primary)}
+    .sub{margin:0 0 14px;color:var(--muted);font-size:.98rem}
+    .badge{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;font-weight:600;font-size:.92rem;border:1px solid rgba(255,255,255,.12)}
+    .dot{width:10px;height:10px;border-radius:50%}
+    .on{background:var(--ok);box-shadow:0 0 0 6px rgba(18,184,134,.18)}
+    .off{background:var(--bad);box-shadow:0 0 0 6px rgba(250,82,82,.18)}
+    button{appearance:none;border:0;border-radius:14px;padding:12px 18px;font-weight:700;font-size:1.02rem;cursor:pointer;background:var(--primary);color:#fff;box-shadow:0 6px 18px var(--ring);transition:transform .05s ease,filter .2s ease,opacity .2s ease}
+    button:hover{filter:brightness(1.05)}button:active{transform:translateY(1px) scale(.997)}button[disabled]{opacity:.6;cursor:not-allowed}
+    .muted{color:var(--muted);font-size:.92rem}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .field{display:flex;flex-direction:column;gap:6px}
+    input{width:100%;padding:10px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--text)}
+    .section{margin-top:16px;padding:14px;border:1px solid rgba(255,255,255,.08);border-radius:16px}
+    .section h2{margin:0 0 10px;font-size:1rem;color:var(--muted)}
+    .toolbar{display:flex;gap:10px;flex-wrap:wrap}
+    .toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#111a;color:#fff;padding:10px 14px;border-radius:10px;backdrop-filter:blur(6px);opacity:0;pointer-events:none;transition:opacity .25s ease}
+    .toast.show{opacity:1}
+    .small{font-size:.88rem}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="row">
+      <div>
+        <h1>Remote LED Control</h1>
+        <p class="sub">Control your ESP32 LED via MQTT (EMQX ready).</p>
+      </div>
+      <div class="spacer"></div>
+      <span id="connBadge" class="badge"><span id="connDot" class="dot off"></span><span id="connText">DISCONNECTED</span></span>
+      <span id="ledBadge" class="badge" style="margin-left:6px;"><span id="ledDot" class="dot off"></span><span id="ledText">LED: OFF</span></span>
+    </div>
+
+    <div class="section">
+      <h2>Controls</h2>
+      <div class="toolbar">
+        <button id="onBtn">Turn ON</button>
+        <button id="offBtn">Turn OFF</button>
+        <button id="toggleBtn">Toggle (Space)</button>
+        <div class="spacer"></div>
+        <div class="muted small">Last update: <span id="ts">—</span></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Connection</h2>
+      <div class="grid">
+        <div class="field"><label>Host</label><input id="host" placeholder="broker.emqx.io" value="broker.emqx.io"></div>
+        <div class="field"><label>Port (WSS)</label><input id="port" type="number" value="8084"></div>
+        <div class="field"><label>Path</label><input id="path" value="mqtt"></div>
+        <div class="field"><label>Client ID</label><input id="clientId" placeholder="web-..." ></div>
+        <div class="field"><label>Username <span class="muted">(optional)</span></label><input id="user"></div>
+        <div class="field"><label>Password <span class="muted">(optional)</span></label><input id="pass" type="password"></div>
+      </div>
+      <div class="grid" style="margin-top:10px">
+        <div class="field"><label>Topic (Set)</label><input id="topicSet" value="esp32/led/set"></div>
+        <div class="field"><label>Topic (State)</label><input id="topicState" value="esp32/led/state"></div>
+      </div>
+      <div class="toolbar" style="margin-top:12px">
+        <button id="connectBtn">Connect</button>
+        <button id="disconnectBtn" disabled>Disconnect</button>
+        <div class="spacer"></div>
+        <button id="saveBtn" title="Save connection settings locally">Save Settings</button>
+        <button id="loadBtn" title="Load saved settings">Load</button>
+        <button id="resetBtn" title="Reset fields to defaults">Reset</button>
+      </div>
+      <p class="muted small" style="margin:10px 0 0">
+        This UI uses secure WebSockets (WSS). Public brokers may drop connections occasionally — that’s normal for testing.
+      </p>
+    </div>
+  </div>
+
+  <div id="toast" class="toast">Saved</div>
+
+  <script>
+    // --- Elements ---
+    const onBtn = document.getElementById('onBtn');
+    const offBtn = document.getElementById('offBtn');
+    const toggleBtn = document.getElementById('toggleBtn');
+
+    const host = document.getElementById('host');
+    const port = document.getElementById('port');
+    const path = document.getElementById('path');
+    const clientId = document.getElementById('clientId');
+    const user = document.getElementById('user');
+    const pass = document.getElementById('pass');
+    const topicSet = document.getElementById('topicSet');
+    const topicState = document.getElementById('topicState');
+
+    const connText = document.getElementById('connText');
+    const connDot  = document.getElementById('connDot');
+    const ledText  = document.getElementById('ledText');
+    const ledDot   = document.getElementById('ledDot');
+    const ts       = document.getElementById('ts');
+    const toast    = document.getElementById('toast');
+
+    const connectBtn    = document.getElementById('connectBtn');
+    const disconnectBtn = document.getElementById('disconnectBtn');
+    const saveBtn       = document.getElementById('saveBtn');
+    const loadBtn       = document.getElementById('loadBtn');
+    const resetBtn      = document.getElementById('resetBtn');
+
+    // --- State ---
+    let client = null;
+    let busy = false;
+
+    function setConnBadge(connected) {
+      connText.textContent = connected ? 'CONNECTED' : 'DISCONNECTED';
+      connDot.className = 'dot ' + (connected ? 'on' : 'off');
+      connectBtn.disabled = connected;
+      disconnectBtn.disabled = !connected;
+      onBtn.disabled = offBtn.disabled = toggleBtn.disabled = !connected;
+    }
+
+    function setLedBadge(state) {
+      const on = String(state).trim().toUpperCase() === 'ON';
+      ledText.textContent = 'LED: ' + (on ? 'ON' : 'OFF');
+      ledDot.className = 'dot ' + (on ? 'on' : 'off');
+      ts.textContent = new Date().toLocaleTimeString();
+    }
+
+    function showToast(msg) {
+      toast.textContent = msg || 'Done';
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 1100);
+    }
+
+    function buildUrl() {
+      const h = host.value.trim() || 'broker.emqx.io';
+      const p = Number(port.value) || 8084;
+      const pa = (path.value.trim() || 'mqtt').replace(/^\/+/, '');
+      return `wss://${h}:${p}/${pa}`;
+    }
+
+    function currentOptions() {
+      const opts = {
+        reconnectPeriod: 2000,
+        clean: true,
+		keepalive:30
+      };
+      if (user.value) opts.username = user.value;
+      if (pass.value) opts.password = pass.value;
+      if (clientId.value) opts.clientId = clientId.value;
+      return opts;
+    }
+
+    function saveSettings() {
+      const payload = {
+        host: host.value, port: port.value, path: path.value,
+        clientId: clientId.value, user: user.value, pass: pass.value,
+        topicSet: topicSet.value, topicState: topicState.value
+      };
+      localStorage.setItem('mqtt-remote-settings', JSON.stringify(payload));
+      showToast('Settings saved');
+    }
+
+    function loadSettings() {
+      const raw = localStorage.getItem('mqtt-remote-settings');
+      if (!raw) { showToast('No saved settings'); return; }
+      const s = JSON.parse(raw);
+      host.value = s.host || 'broker.emqx.io';
+      port.value = s.port || '8084';
+      path.value = s.path || 'mqtt';
+      clientId.value = s.clientId || '';
+      user.value = s.user || '';
+      pass.value = s.pass || '';
+      topicSet.value = s.topicSet || 'esp32/led/cmd';
+      topicState.value = s.topicState || 'esp32/led/state';
+      showToast('Settings loaded');
+    }
+
+    function resetSettings() {
+      host.value = 'y2d012bd.ala.eu-central-1.emqxsl.com';
+      port.value = '8084';
+      path.value = 'mqtt';
+      clientId.value = 'esp32-Pune-RAVI';
+      user.value = 'ESP32-LOCK-VIK';
+      pass.value = 'lkj082A%SD524';
+      topicSet.value = 'esp32/led/cmd';
+      topicState.value = 'esp32/led/state';
+      showToast('Defaults restored');
+    }
+
+    function connect() {
+      const url = buildUrl();
+      const opts = currentOptions();
+
+      if (client) {
+        try { client.end(true); } catch {}
+        client = null;
+      }
+
+      setConnBadge(false);  
+      setLedBadge('OFF');
+
+      client = mqtt.connect(url, opts);
+
+      client.on('connect', () => {
+        setConnBadge(true); console.log("I am 2");
+        client.subscribe(topicState.value);
+      });
+	  
+	  client.on('reconnect', () => { setConnBadge(false); console.log("I am 3 (reconnect)"); });
+	  client.on('close',     () => { setConnBadge(false); console.log("I am 4 (close)"); });
+	  client.on('error',     e  => { setConnBadge(false); console.warn('MQTT error:', e); console.log("I am 5 (error)"); });
+	  client.on('offline', () => console.log('offline'));
+	  client.on('end',     () => console.log('end'));
+
+      client.on('message', (t, payload) => {
+        if (t === topicState.value) setLedBadge(payload.toString());
+      });
+    }
+
+    function disconnect() {
+      if (client) { try { client.end(true); } catch {} }
+      client = null;
+      setConnBadge(false);
+    }
+
+    async function publish(msg) {
+      if (!client || busy) return;
+      busy = true;
+      try {
+        client.publish(topicSet.value, msg);
+        showToast('Sent: ' + msg);
+      } finally {
+        busy = false;
+      }
+    }
+
+    // --- Wire up UI ---
+    onBtn.onclick = () => publish('ON');
+    offBtn.onclick = () => publish('OFF');
+    toggleBtn.onclick = () => publish('TOGGLE');
+
+    connectBtn.onclick = connect;
+    disconnectBtn.onclick = disconnect;
+    saveBtn.onclick = saveSettings;
+    loadBtn.onclick = loadSettings;
+    resetBtn.onclick = resetSettings;
+
+    // Space toggles when connected
+    addEventListener('keydown', (e) => {
+      if (e.code === 'Space') { e.preventDefault(); if (client) toggleBtn.click(); }
+    });
+
+    // Auto-generate a clientId if none set
+    if (!localStorage.getItem('mqtt-remote-settings')) {
+      clientId.value = 'web-' + Math.random().toString(16).slice(2,9);
+    } else {
+      loadSettings();
+      if (!clientId.value) clientId.value = 'web-' + Math.random().toString(16).slice(2,9);
+    }
+
+    // Auto-connect on load (can be toggled by clearing saved settings)
+    connect();
+  </script>
+</body>
+</html>
