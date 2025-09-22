@@ -177,6 +177,19 @@
       </div>
 
       <p id="info" class="muted" aria-live="polite"></p>
+
+      <hr style="border:none;border-top:1px solid rgba(127,127,127,.25);margin:16px 0">
+
+      <h2 style="margin:0 0 6px;font-size:18px">Load Cell (HX711)</h2>
+      <div class="row" style="gap:10px">
+        <div class="status">Weight:&nbsp;<span id="hxVal">--</span></div>
+        <span class="muted">raw:&nbsp;<span id="hxRaw">--</span></span>
+        <span class="muted">age:&nbsp;<span id="hxAge">--</span> ms</span>
+      </div>
+      <div class="actions">
+        <a href="#" id="hxTare" class="btn secondary">Tare (Zero)</a>
+        <a href="#" id="hxScale" class="btn secondary">Set Scale</a>
+      </div>
     </main>
 
     <!-- Script -->
@@ -202,6 +215,7 @@
 
       // App state
       let state = { on: false };
+      let hx = { value: NaN, raw: 0, age: -1, scale: 1 };
 
       // Render UI from state
       function render() {
@@ -298,6 +312,39 @@
       refreshStatus();
       setInterval(refresh, 4000);
       setInterval(refreshStatus, 7000);
+
+      // --- HX711 helpers ---
+      const hxVal = document.getElementById('hxVal');
+      const hxRaw = document.getElementById('hxRaw');
+      const hxAge = document.getElementById('hxAge');
+      const hxTareBtn = document.getElementById('hxTare');
+      const hxScaleBtn = document.getElementById('hxScale');
+
+      async function hxRefresh() {
+        try {
+          const j = await call('/hx');
+          if (j) {
+            hx.value = Number(j.value);
+            hx.raw = Number(j.raw);
+            hx.age = Number(j.age_ms);
+            hx.scale = Number(j.scale);
+            hxVal.textContent = Number.isFinite(hx.value) ? hx.value.toFixed(3) + ' units' : '--';
+            hxRaw.textContent = Number.isFinite(hx.raw) ? String(hx.raw) : '--';
+            hxAge.textContent = Number.isFinite(hx.age) ? String(hx.age) : '--';
+          }
+        } catch(_){ /* ignore */ }
+      }
+      async function hxTareNow(e){ e?.preventDefault(); hxTareBtn.classList.add('disabled'); try { await call('/hx/tare'); } finally { hxTareBtn.classList.remove('disabled'); } }
+      async function hxSetScale(e){
+        e?.preventDefault();
+        const v = prompt('Enter scale (counts per unit). Example: if 100000 counts ≈ 1000 g, scale = 100.0', String(hx.scale||1));
+        if (!v) return; const k = Number(v);
+        if (!(k>0)) return alert('Scale must be > 0');
+        try { await call('/hx/scale?k=' + encodeURIComponent(k)); } catch(_){ alert('Failed to set scale'); }
+      }
+      hxTareBtn.addEventListener('click', hxTareNow);
+      hxScaleBtn.addEventListener('click', hxSetScale);
+      setInterval(hxRefresh, 500);
     </script>
   </body>
   </html>

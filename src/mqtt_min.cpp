@@ -118,6 +118,13 @@ namespace MqttMin {
     if (g_mqtt.connected()) g_mqtt.loop();
     publishState();
   }
+
+  bool connected() { return g_mqtt.connected(); }
+
+  bool publish(const char* topic, const char* payload, bool retained) {
+    if (!g_mqtt.connected() || !topic || !payload) return false;
+    return g_mqtt.publish(topic, payload, retained);
+  }
 }
 
 

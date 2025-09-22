@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ESP32 HX711 Remote</title>
+    <style>
+      body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:2rem;line-height:1.5}
+      .card{max-width:720px;margin:0 auto;border:1px solid #e5e7eb;border-radius:12px;padding:16px}
+      .muted{color:#6b7280}
+      .row{display:flex;gap:12px;align-items:center;margin:.5rem 0}
+      .value{font-size:2.2rem;font-weight:800}
+      code{background:#f3f4f6;border:1px solid #e5e7eb;border-radius:6px;padding:.15rem .35rem}
+      .ok{color:#16a34a}.warn{color:#d97706}.err{color:#dc2626}
+      .small{font-size:.9rem}
+    </style>
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  </head>
+  <body>
+    <main class="card">
+      <h2>ESP32 HX711 Remote (MQTT)</h2>
+      <p class="muted">Shows live load cell values published by the ESP32 over MQTT.</p>
+      <div class="row">Broker: <code id="hostInfo"></code></div>
+      <div class="row">Status: <span id="conn" class="muted">Connecting…</span></div>
+      <div class="row">Topic: <code id="topic">esp32/hx711/weight</code></div>
+
+      <hr>
+      <div class="row">
+        <div>Latest:</div>
+        <div id="val" class="value">--</div>
+        <div id="unit" class="muted">units</div>
+      </div>
+      <div class="row small muted">Raw: <span id="raw">--</span> • Age: <span id="age">--</span></div>
+
+      <div style="margin-top:8px" class="small muted">
+        <strong>What these mean</strong>
+        <ul>
+          <li><strong>Latest</strong>: Smoothed reading in your configured units. Computed as (raw − tare offset) ÷ scale. Set scale on the device so the number reads grams, kg, etc.</li>
+          <li><strong>Raw</strong>: Uncalibrated signed 24‑bit ADC counts from the HX711 (before scaling). Useful for calibration.</li>
+          <li><strong>Age</strong>: Time since the last MQTT reading received in this page. If it grows, sampling or connectivity may be slow.</li>
+        </ul>
+      </div>
+    </main>
+
+    <script>
+      // Update these defaults to match your broker (mirrors mqtt_config.cpp)
+      const BROKER = {
+        host: 'y2d012bd.ala.eu-central-1.emqxsl.com',
+        port: 8084,
+        path: '/mqtt',
+        username: 'ESP32-LOCK-VIK',
+        password: 'lkj082A%SD524',
+        topic: 'esp32/hx711/weight'
+      };
+
+      const hostInfo = document.getElementById('hostInfo');
+      const conn = document.getElementById('conn');
+      const topicEl = document.getElementById('topic');
+      const val = document.getElementById('val');
+      const unit = document.getElementById('unit');
+      const raw = document.getElementById('raw');
+      const age = document.getElementById('age');
+
+      hostInfo.textContent = `${BROKER.host}:${BROKER.port}${BROKER.path}`;
+      topicEl.textContent = BROKER.topic;
+
+      const url = `wss://${BROKER.host}:${BROKER.port}${BROKER.path}`;
+      const opts = { clientId: 'web-' + Math.random().toString(16).slice(2, 8) };
+      if (BROKER.username) opts.username = BROKER.username;
+      if (BROKER.password) opts.password = BROKER.password;
+      opts.reconnectPeriod = 2000; opts.clean = true; opts.connectTimeout = 5000;
+
+      let lastMsgAt = 0;
+      const client = mqtt.connect(url, opts);
+      client.on('connect', ()=>{ conn.textContent = 'Connected'; conn.className = 'ok'; client.subscribe(BROKER.topic); lastMsgAt = 0; age.textContent = '--'; });
+      client.on('reconnect', ()=>{ conn.textContent = 'Reconnecting…'; conn.className = 'warn'; });
+      client.on('close', ()=>{ conn.textContent = 'Disconnected'; conn.className = 'err'; lastMsgAt = 0; age.textContent = '--'; });
+      client.on('error', ()=>{ conn.textContent = 'Error'; conn.className = 'err'; });
+      client.on('message', (t, p)=>{
+        try{
+          const j = JSON.parse(String(p));
+          if (typeof j.value === 'number') val.textContent = j.value.toFixed(3);
+          if (typeof j.unit === 'string') unit.textContent = j.unit;
+          if (typeof j.raw !== 'undefined') raw.textContent = String(j.raw);
+          if (typeof j.age_ms !== 'undefined') { age.textContent = String(j.age_ms) + ' ms'; lastMsgAt = Date.now(); }
+          else { lastMsgAt = Date.now(); age.textContent = '0 ms'; }
+        }catch(_){ /* ignore */ }
+      });
+
+      // Update Age: milliseconds since last received message
+      setInterval(()=>{
+        if (!lastMsgAt) return;
+        const dt = Date.now() - lastMsgAt;
+        age.textContent = dt + ' ms';
+      }, 500);
+    </script>
+  </body>
+  </html>

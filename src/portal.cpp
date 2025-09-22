@@ -17,6 +17,7 @@
 #include <FS.h>
 #include <DNSServer.h>
 #include "wifi_config.h"
+#include "hx711_service.h"
 
 namespace {
   WebServer server(80);
@@ -153,6 +154,31 @@ namespace Portal {
     server.on("/fwlink", [] { handleRoot(); });
     server.on("/scan", handleScan);
     server.on("/save", HTTP_POST, handleSave);
+    // HX711 endpoints
+    server.on("/hx", HTTP_GET, []{
+      float u; int32_t raw; uint32_t age; HxService::get(u, raw, age);
+      String json = String("{\"value\":") + String(u, 3) +
+                    ",\"raw\":" + String(raw) +
+                    ",\"age_ms\":" + (age==UINT32_MAX?String(-1):String(age)) +
+                    ",\"scale\":" + String(HxService::currentScale(), 6) +
+                    "}";
+      server.send(200, "application/json", json);
+    });
+    server.on("/hx/tare", HTTP_GET, []{
+      bool ok = HxService::tare(8);
+      server.send(200, "application/json", String("{\"ok\":") + (ok?"true":"false") + "}");
+    });
+    server.on("/hx/scale", HTTP_GET, []{
+      if (!server.hasArg("k")) { server.send(400, "text/plain", "Missing k"); return; }
+      float k = server.arg("k").toFloat(); if (k <= 0.f) { server.send(400, "text/plain", "k must be > 0"); return; }
+      HxService::setScale(k);
+      server.send(200, "application/json", String("{\"ok\":true,\"scale\":") + String(HxService::currentScale(),6) + "}");
+    });
+    server.on("/hx/config", HTTP_GET, []{
+      String json = String("{\"scale\":") + String(HxService::currentScale(),6) +
+                    ",\"offset\":" + String(HxService::currentOffset()) + "}";
+      server.send(200, "application/json", json);
+    });
     // Device status: Wi‑Fi + Internet reachability
     server.on("/status", HTTP_GET, []{
       bool connected = (WiFi.status() == WL_CONNECTED);

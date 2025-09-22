@@ -11,4 +11,4 @@ const char* MQTT_CLIENT_ID = "esp32-Pune";    // change to a unique ID if using 
 // Topics
 const char* MQTT_TOPIC_CMD   = "esp32/led/cmd";   // publish ON/OFF/TOGGLE (or 1/0) to this topic
 const char* MQTT_TOPIC_STATE = "esp32/led/state"; // device publishes retained state here
-
+const char* MQTT_TOPIC_HX711 = "esp32/hx711/weight"; // device publishes JSON readings here

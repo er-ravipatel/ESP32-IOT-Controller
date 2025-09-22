@@ -16,6 +16,7 @@
 #include "wifi_config.h"
 #include "portal.h"
 #include "mqtt_min.h"
+#include "hx711_service.h"
 
 #ifndef LED_BUILTIN
 #define LED_BUILTIN 2  // Fallback for common ESP32 dev boards
@@ -74,6 +75,8 @@ void setup() {
   Portal::begin(nullptr, nullptr);
   // Init minimal MQTT (non-blocking)
   MqttMin::begin();
+  // Start HX711 (uses default pins 32:DOUT, 33:SCK; change via HX711_DOUT_PIN/HX711_SCK_PIN)
+  HxService::begin();
 
   // Try saved credentials; if none or connect fails, keep the portal up
   String ssid, pass;
@@ -136,8 +139,10 @@ void loop() {
     }
   }
 
-  // MQTT worker (non-blocking, attempts only after Wi‑Fi is up)
+  // MQTT worker (non-blocking, attempts only after Wi-Fi is up)
   MqttMin::loop();
+  // HX711 sampler and publisher
+  HxService::loop();
 
   // Small idle delay to keep the loop yielding
   delay(10);
