@@ -9,7 +9,7 @@
 
 // Optional pin macros for convenience (override in build_flags)
 #ifndef RELAY1_PIN
-#define RELAY1_PIN RELAY_PIN
+#define RELAY1_PIN 26
 #endif
 #ifndef RELAY2_PIN
 #define RELAY2_PIN -1
