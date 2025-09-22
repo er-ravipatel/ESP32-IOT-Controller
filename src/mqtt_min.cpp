@@ -4,6 +4,7 @@
 #include <PubSubClient.h>
 #include "mqtt_config.h"
 #include "certs.h"
+#include "client_certs.h"
 #include <time.h>
 #include "relay.h"
 
@@ -89,14 +90,46 @@ namespace {
     if (g_wifiUpSince == 0) g_wifiUpSince = now;
     if (now - g_wifiUpSince < 3000) return; // 3s settle time
 
-    // TLS without CA validation per user request: no time gating required
+    // If building with CA and/or client certs, make sure SNTP time is set
+#if defined(USE_MQTT_CA) || defined(USE_MQTT_CLIENT_CERT)
+    if (!g_timeReady) {
+      if (g_timeStart == 0) {
+        Serial.println(F("SNTP: starting time sync..."));
+        configTime(0, 0, "pool.ntp.org", "time.nist.gov", "time.google.com");
+        g_timeStart = now;
+      }
+      if (timeIsSet()) {
+        g_timeReady = true;
+        Serial.println(F("SNTP: time set OK"));
+      } else {
+        // Wait up to 15s for time to set
+        if (now - g_timeStart < 15000) return; else return; // keep waiting, try again next loop
+      }
+    }
+#endif
 
     if (g_mqtt.connected()) return;
     if (now - g_lastTry < g_nextTryDelay) return; // respect backoff
     g_lastTry = now;
 
-    // Configure TLS (insecure) + server using hostname
+    // Configure TLS (with CA if provided) + server using hostname
+#ifdef USE_MQTT_CA
+    g_net.setCACert(MQTT_ROOT_CA_PEM);
+    Serial.println(F("TLS: using Root CA validation"));
+#else
     g_net.setInsecure();
+    Serial.println(F("TLS: insecure connection (no CA)"));
+#endif
+
+#ifdef USE_MQTT_CLIENT_CERT
+    if (MQTT_CLIENT_CERT_PEM[0] != '\0' && MQTT_CLIENT_KEY_PEM[0] != '\0') {
+      g_net.setCertificate(MQTT_CLIENT_CERT_PEM);
+      g_net.setPrivateKey(MQTT_CLIENT_KEY_PEM);
+      Serial.println(F("TLS: client certificate configured"));
+    } else {
+      Serial.println(F("TLS: USE_MQTT_CLIENT_CERT set but no cert/key provided"));
+    }
+#endif
     g_mqtt.setServer(MQTT_HOST, MQTT_PORT);
     g_mqtt.setSocketTimeout(5);
     Serial.print(F("MQTT: connecting (TLS, insecure) to ")); Serial.print(MQTT_HOST); Serial.print(':'); Serial.println(MQTT_PORT);
